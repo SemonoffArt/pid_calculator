@@ -67,7 +67,7 @@ def load_csv(file_storage) -> pd.DataFrame:
             raise DataError("Не удалось определить кодировку файла "
                             "(ожидается UTF-8 или CP1251).")
 
-    rows = _parse_rows(text)
+    rows = _parse_rows(text, _detect_delimiter(text))
     header_idx, header = _find_header(rows)
     data = [r for r in rows[header_idx + 1:] if _is_data_row(r)]
     if len(data) < 10:
@@ -127,10 +127,25 @@ def _try_float(s: str) -> float | None:
         return None
 
 
-def _parse_rows(text: str) -> list[list[str]]:
+def _detect_delimiter(text: str) -> str:
+    """
+    Определяет разделитель полей по первой строке файла.
+
+    Поддерживаются ';', табуляция и ','. Приоритет ';' — в старом формате
+    десятичная запятая внутри чисел не должна путать определение.
+    """
+    first = text.splitlines()[0] if text.splitlines() else ""
+    if ";" in first:
+        return ";"
+    if "\t" in first:
+        return "\t"
+    return ","
+
+
+def _parse_rows(text: str, delimiter: str = ";") -> list[list[str]]:
     """Разбор CSV на строки; пустые ячейки в конце строк удаляются."""
     rows = []
-    for row in csv.reader(io.StringIO(text), delimiter=";"):
+    for row in csv.reader(io.StringIO(text), delimiter=delimiter):
         while row and not row[-1].strip():
             row.pop()
         if any(c.strip() for c in row):

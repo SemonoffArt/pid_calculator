@@ -39,40 +39,39 @@ def _fig_to_png(fig) -> io.BytesIO:
     return buf
 
 
-def _plot_raw(state) -> io.BytesIO:
-    t = np.array(state["time"]); pv = np.array(state["pv"])
-    sp = np.array(state["sp"]); cv = np.array(state["cv"])
+def _plot_raw(data) -> io.BytesIO:
     fig, ax = plt.subplots(figsize=(7.5, 3.2))
-    ax.plot(t, pv, label="PV", lw=1)
-    ax.plot(t, sp, label="SP", lw=1)
+    ax.plot(data.time, data.pv, label="PV", lw=1)
+    ax.plot(data.time, data.sp, label="SP", lw=1)
     ax2 = ax.twinx()
-    ax2.plot(t, cv, label="CV", lw=0.8, alpha=0.6, color="tab:green")
+    ax2.plot(data.time, data.cv, label="CV", lw=0.8, alpha=0.6,
+             color="tab:green")
     ax.set_xlabel("Время, с"); ax.set_ylabel("PV / SP"); ax2.set_ylabel("CV, %")
     ax.legend(loc="best"); ax.grid(alpha=0.3)
     fig.tight_layout()
     return _fig_to_png(fig)
 
 
-def _plot_model(state) -> io.BytesIO:
+def _plot_model(state, data) -> io.BytesIO:
     from core.identification import fopdt_response
-    t = np.array(state["time"]); cv = np.array(state["cv"])
-    model_pv = fopdt_response(t, cv, state["K"], state["T"], state["tau"])
+    model_pv = fopdt_response(data.time, data.cv,
+                              state["K"], state["T"], state["tau"])
     fig, ax = plt.subplots(figsize=(7.5, 3.0))
-    ax.plot(t, np.array(state["pv"]), label="PV (данные)", lw=1)
-    ax.plot(t, model_pv, "--", label="Модель FOPDT", lw=1.4)
+    ax.plot(data.time, data.pv, label="PV (данные)", lw=1)
+    ax.plot(data.time, model_pv, "--", label="Модель FOPDT", lw=1.4)
     ax.set_xlabel("Время, с"); ax.legend(); ax.grid(alpha=0.3)
     fig.tight_layout()
     return _fig_to_png(fig)
 
 
-def _plot_sim(state) -> io.BytesIO:
-    model = type("M", (), {"K": state["K"], "T": state["T"],
-                           "tau": state["tau"]})()
+def _plot_sim(state, data) -> io.BytesIO:
     coeffs = state["coeffs"]; ctype = state.get("ctype", "PID")
+    sim_time = min(max(2.0 * float(data.time[-1] - data.time[0]), 60.0), 3600.0)
     sim = simulator.simulate_closed_loop(
         state["K"], state["T"], state["tau"], ctype,
         coeffs["Kp"], coeffs.get("Ti"), coeffs.get("Td"),
-        dt_sim=0.05, sp_array=np.array(state["sp"]))
+        dt_sim=max(data.dt / 5.0, 0.01), sim_time=sim_time,
+        sp_array=data.sp)
     metrics = simulator.quality_metrics(sim[0], sim[1], sim[2])
     fig, ax = plt.subplots(figsize=(7.5, 3.0))
     ax.plot(sim[0], sim[1], label="SP", lw=1)
@@ -146,13 +145,13 @@ def build_pdf(state: dict, data) -> io.BytesIO:
 
     # Графики
     story += [Paragraph("Исходные данные процесса", styles["Heading2"]),
-              Image(_plot_raw(state), width=16 * cm, height=6.8 * cm),
+              Image(_plot_raw(data), width=16 * cm, height=6.8 * cm),
               Spacer(1, 10),
               Paragraph("Сравнение данных и модели FOPDT", styles["Heading2"]),
-              Image(_plot_model(state), width=16 * cm, height=6.4 * cm),
+              Image(_plot_model(state, data), width=16 * cm, height=6.4 * cm),
               PageBreak(),
               Paragraph("Симуляция замкнутой системы", styles["Heading2"]),
-              Image(_plot_sim(state), width=16 * cm, height=6.4 * cm)]
+              Image(_plot_sim(state, data), width=16 * cm, height=6.4 * cm)]
 
     doc.build(story)
     buf.seek(0)

@@ -4,6 +4,7 @@ AJAX-API и экспорт отчётов (PDF, Excel).
 """
 from __future__ import annotations
 
+import math
 import os
 
 import numpy as np
@@ -24,6 +25,22 @@ def _num(value) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _finite(value):
+    """
+    Рекурсивно заменяет NaN/Infinity на None.
+
+    jsonify сериализует NaN как литерал `NaN`, что невалидно для строгого
+    браузерного JSON.parse — из-за этого фронтенд считал ответ ошибкой.
+    """
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {k: _finite(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_finite(v) for v in value]
+    return value
 
 
 def register_routes(app: Flask) -> None:
@@ -117,9 +134,9 @@ def register_routes(app: Flask) -> None:
         data = _load_processed()
         res = identification.identify(data, get_state().get("id_mode", "auto"))
         model = res["model"]
+        # ВНИМАНИЕ: массивы данных в сессию не сохраняем — браузеры
+        # отбрасывают куки больше 4 КБ. Данные читаются из uploads/.
         save_state(
-            time=data.time.tolist(), pv=data.pv.tolist(), sp=data.sp.tolist(),
-            cv=data.cv.tolist(), dt=data.dt, info=data.info,
             K=model.K, T=model.T, tau=model.tau,
             fit_quality=model.fit_quality, Ku=res.get("Ku"), Tu=res.get("Tu"),
             method_used=model.method, warnings=res.get("warnings", []),
@@ -157,6 +174,13 @@ def register_routes(app: Flask) -> None:
         Принимает JSON: {method, ctype, lambda}.
         Возвращает JSON с коэффициентами, данными графиков и метриками.
         """
+        try:
+            return _api_calculate_impl()
+        except Exception as exc:  # любая ошибка — понятный JSON вместо HTML
+            app.logger.exception("Ошибка /api/calculate")
+            return jsonify({"error": f"Внутренняя ошибка: {exc}"}), 500
+
+    def _api_calculate_impl():
         payload = request.get_json(silent=True) or {}
         method = payload.get("method", "zn_open")
         ctype = payload.get("ctype", "PID")
@@ -167,7 +191,11 @@ def register_routes(app: Flask) -> None:
         if not state.get("K"):
             return jsonify({"error": "Данные не загружены."}), 400
 
-        data = _rebuild_data(state)
+        try:
+            data = _load_processed()
+        except (FileNotFoundError, data_loader.DataError):
+            return jsonify({"error": "Файл данных не найден. "
+                                     "Загрузите файл заново."}), 400
         model = identification.FopdtModel(K=state["K"], T=state["T"],
                                           tau=state["tau"])
 
@@ -195,9 +223,9 @@ def register_routes(app: Flask) -> None:
         sim = simulator.simulate_closed_loop(
             model.K, model.T, model.tau, ctype,
             coeffs["Kp"], coeffs["Ti"], coeffs["Td"],
-            dt_sim=max(state["dt"] / Config.SIM_SUBSTEPS, 0.01),
+            dt_sim=max(data.dt / Config.SIM_SUBSTEPS, 0.01),
             sim_time=sim_time,
-            sp_array=np.asarray(state["sp"]))
+            sp_array=data.sp)
         metrics = simulator.quality_metrics(sim[0], sim[1], sim[2])
 
         response = {
@@ -217,15 +245,7 @@ def register_routes(app: Flask) -> None:
                 "cv": sim[3].tolist()[::2],
             },
         }
-        return jsonify(response)
-
-    def _rebuild_data(state):
-        from core.data_loader import ProcessData
-        import numpy as _np
-        return ProcessData(
-            time=_np.array(state["time"]), pv=_np.array(state["pv"]),
-            sp=_np.array(state["sp"]), cv=_np.array(state["cv"]),
-            dt=state["dt"], info=state.get("info", {}))
+        return jsonify(_finite(response))
 
     @app.route("/adjust")
     def adjust_page():
@@ -260,7 +280,7 @@ def register_routes(app: Flask) -> None:
             flash("Нет результатов для экспорта.", "warning")
             return redirect(url_for("results_page"))
         from reports.pdf_report import build_pdf
-        data = _rebuild_data(state)
+        data = _load_processed()
         buf = build_pdf(state, data)
         return send_file(buf, mimetype="application/pdf", as_attachment=True,
                          download_name="pid_report.pdf")
@@ -273,7 +293,7 @@ def register_routes(app: Flask) -> None:
             flash("Нет результатов для экспорта.", "warning")
             return redirect(url_for("results_page"))
         from reports.excel_report import build_excel
-        data = _rebuild_data(state)
+        data = _load_processed()
         buf = build_excel(state, data)
         return send_file(buf,
                          mimetype="application/vnd.openxmlformats-officedocument"

@@ -223,5 +223,6 @@ uploads/*
 exports/*
 !exports/.gitkeep
 tmp/
+flask.log*
 *.pdf
 *.xlsx

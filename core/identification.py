@@ -50,8 +50,12 @@ def fopdt_response(time: np.ndarray, u: np.ndarray, K: float, T: float,
     y0 = u_delayed[0] * K
     y[0] = y0
     a = dt / T if T > 0 else 1.0
-    for i in range(1, n):
-        y[i] = y[i - 1] + a * (K * u_delayed[i - 1] - y[i - 1])
+    # Переполнения неизбежны при пробных параметрах в curve_fit
+    # (экстремально малые T) — подавляем, некорректные кандидаты
+    # отбрасываются по величине остатка.
+    with np.errstate(over="ignore", invalid="ignore"):
+        for i in range(1, n):
+            y[i] = y[i - 1] + a * (K * u_delayed[i - 1] - y[i - 1])
     return y
 
 
