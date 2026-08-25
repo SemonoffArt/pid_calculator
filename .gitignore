@@ -216,3 +216,12 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Project: temporary user data
+uploads/*
+!uploads/.gitkeep
+exports/*
+!exports/.gitkeep
+tmp/
+*.pdf
+*.xlsx

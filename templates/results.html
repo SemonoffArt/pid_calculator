@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Результаты — ПИД-калькулятор{% endblock %}
+
+{% block content %}
+<h1 class="mb-3">Результаты</h1>
+
+{% for warning in state.warnings %}
+<div class="alert alert-warning">{{ warning }}</div>
+{% endfor %}
+
+<div class="row g-4">
+  <!-- Панель управления -->
+  <div class="col-lg-4">
+    <div class="card shadow-sm p-3 mb-3">
+      <h5 class="mb-3">Параметры модели FOPDT</h5>
+      <table class="table table-sm table-striped">
+        <tr><th>K (усиление)</th>
+            <td id="model-K">{{ "%.4f"|format(state.K or 0) }}
+              {% if state.K and state.K < 0 %}
+                <span class="badge text-bg-info">обратное действие</span>
+              {% endif %}
+            </td></tr>
+        <tr><th>T (пост. времени), с</th><td id="model-T">{{ "%.2f"|format(state.T or 0) }}</td></tr>
+        <tr><th>τ (запаздывание), с</th><td id="model-tau">{{ "%.2f"|format(state.tau or 0) }}</td></tr>
+        <tr><th>Ku / Tu</th>
+            <td>{% if state.Ku %}{{ "%.2f / %.2f"|format(state.Ku, state.Tu) }}{% else %}—{% endif %}</td></tr>
+        {% if state.fit_quality == state.fit_quality and state.fit_quality is not none %}
+        <tr><th>R² аппроксимации</th><td>{{ "%.3f"|format(state.fit_quality) }}</td></tr>
+        {% endif %}
+      </table>
+    </div>
+
+    <div class="card shadow-sm p-3 mb-3">
+      <h5 class="mb-3">Настройка регулятора</h5>
+      <div class="mb-2">
+        <label for="method" class="form-label">Метод настройки</label>
+        <select class="form-select" id="method">
+          <option value="zn_open">Зиглер–Николс (разомкнутый)</option>
+          <option value="zn_closed">Зиглер–Николс (замкнутый)</option>
+          <option value="chr_0">Чен–Хрон (без перерегулирования)</option>
+          <option value="chr_20">Чен–Хрон (быстрое затухание)</option>
+          <option value="imc">Внутренняя модель (IMC)</option>
+          <option value="itae">Оптимизация ITAE</option>
+        </select>
+      </div>
+      <div class="mb-2">
+        <label for="ctype" class="form-label">Тип регулятора</label>
+        <select class="form-select" id="ctype">
+          <option value="P">P</option>
+          <option value="PI">PI</option>
+          <option value="PID" selected>PID</option>
+        </select>
+      </div>
+      <div class="mb-2" id="lambda-group" style="display:none;">
+        <label for="lambda-input" class="form-label">λ для IMC, с
+          <span class="text-muted">(0 — авто)</span></label>
+        <input type="number" class="form-control" id="lambda-input"
+               value="0" min="0" step="1">
+      </div>
+      <button class="btn btn-primary w-100" id="recalc-btn">Пересчитать</button>
+      <div class="spinner-border text-primary mt-3 d-none mx-auto" id="spinner"
+           role="status"><span class="visually-hidden">Загрузка…</span></div>
+    </div>
+
+    <div class="card shadow-sm p-3 mb-3">
+      <h5 class="mb-3">Коэффициенты</h5>
+      <table class="table table-sm table-striped">
+        <tr><th>Kp</th><td id="coef-kp">{{ "%.4f"|format(state.coeffs.Kp) if state.coeffs else "—" }}</td></tr>
+        <tr><th>Ti, с</th><td id="coef-ti">{{ "%.2f"|format(state.coeffs.Ti) if state.coeffs and state.coeffs.Ti else "—" }}</td></tr>
+        <tr><th>Td, с</th><td id="coef-td">{{ "%.2f"|format(state.coeffs.Td) if state.coeffs and state.coeffs.Td else "—" }}</td></tr>
+      </table>
+      <div id="metrics-box" class="small text-muted"></div>
+      <div class="d-grid gap-2 mt-2">
+        <a href="{{ url_for('adjust_page') }}" class="btn btn-outline-secondary btn-sm">Ручная корректировка</a>
+        <a href="{{ url_for('export_pdf') }}" class="btn btn-outline-danger btn-sm">Экспорт PDF</a>
+        <a href="{{ url_for('export_excel') }}" class="btn btn-outline-success btn-sm">Экспорт Excel</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Графики -->
+  <div class="col-lg-8">
+    <div class="card shadow-sm p-3 mb-3">
+      <h5>Исходные данные: PV, SP, CV</h5>
+      <div id="plot-raw" style="height:340px;"></div>
+    </div>
+    <div class="card shadow-sm p-3 mb-3">
+      <h5>Модель FOPDT и данные</h5>
+      <div id="plot-model" style="height:300px;"></div>
+    </div>
+    <div class="card shadow-sm p-3">
+      <h5>Симуляция замкнутой системы</h5>
+      <div id="plot-sim" style="height:320px;"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>window.PAGE = "results";</script>
+<script>
+  // Первичный расчёт при открытии страницы
+  $(function () { PIDApp.recalculate(); });
+</script>
+{% endblock %}
