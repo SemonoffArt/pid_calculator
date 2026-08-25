@@ -9,15 +9,13 @@
   {% block head %}{% endblock %}
 </head>
 <body>
-<nav class="navbar navbar-expand-lg navbar-dark bg-primary">
-  <div class="container">
-    <a class="navbar-brand" href="{{ url_for('index') }}">ПИД-калькулятор</a>
-    <div class="navbar-nav">
-      <a class="nav-link" href="{{ url_for('index') }}">Загрузка данных</a>
-      <a class="nav-link" href="{{ url_for('results_page') }}">Результаты</a>
-      <a class="nav-link" href="{{ url_for('adjust_page') }}">Ручная корректировка</a>
-    </div>
-  </div>
+<nav class="navbar">
+  <a class="navbar-brand" href="{{ url_for('index') }}">ПИД-калькулятор</a>
+  <nav class="nav">
+    <a class="nav-link" href="{{ url_for('index') }}">Загрузка данных</a>
+    <a class="nav-link" href="{{ url_for('results_page') }}">Результаты</a>
+    <a class="nav-link" href="{{ url_for('adjust_page') }}">Ручная корректировка</a>
+  </nav>
 </nav>
 
 <main class="container py-4">
@@ -33,7 +31,7 @@
   {% block content %}{% endblock %}
 </main>
 
-<footer class="text-center text-muted py-3 border-top mt-auto">
+<footer class="text-center py-3 mt-auto">
   Веб-приложение для автоматической настройки ПИД-регуляторов
 </footer>
 

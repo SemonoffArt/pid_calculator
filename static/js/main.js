@@ -18,10 +18,11 @@ const PIDApp = (() => {
   function drawRaw(raw) {
     Plotly.react("plot-raw", [
       { x: raw.time, y: raw.sp, name: "SP", mode: "lines",
-        line: { color: "#d62728" } },
-      { x: raw.time, y: raw.pv, name: "PV", mode: "lines" },
+        line: { color: "#e74c3c" } },
+      { x: raw.time, y: raw.pv, name: "PV", mode: "lines",
+        line: { color: "#2c3e50" } },
       { x: raw.time, y: raw.cv, name: "CV, %", mode: "lines",
-        line: { color: "#2ca02c", width: 1 }, opacity: 0.6 },
+        line: { color: "#18bc9c", width: 1 }, opacity: 0.6 },
     ], Object.assign({ yaxis: { title: "PV / SP" },
                        xaxis: { title: "Время, с" } }, layout), cfg);
   }
@@ -29,11 +30,11 @@ const PIDApp = (() => {
   function drawSim(sim) {
     Plotly.react("plot-sim", [
       { x: sim.time, y: sim.sp, name: "SP (задание)", mode: "lines",
-        line: { color: "#d62728" } },
+        line: { color: "#e74c3c" } },
       { x: sim.time, y: sim.pv, name: "PV (модель)", mode: "lines",
-        line: { width: 3 } },
+        line: { color: "#2c3e50", width: 3 } },
       { x: sim.time, y: sim.cv, name: "CV, %", mode: "lines",
-        line: { color: "#2ca02c", width: 1 }, opacity: 0.5 },
+        line: { color: "#18bc9c", width: 1 }, opacity: 0.5 },
     ], Object.assign({ yaxis: { title: "Значение" },
                        xaxis: { title: "Время, с" } }, layout), cfg);
   }

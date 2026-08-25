@@ -1,8 +1,232 @@
-/* Дополнительные стили приложения */
+/* ПИД-калькулятор — основные стили (палитра ecs7search) */
+
 body {
-  display: flex;
-  min-height: 100vh;
-  flex-direction: column;
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: linear-gradient(135deg, #dae4e9 0%, #c9d8df 25%, #e2ebf0 50%, #d2dee5 75%, #c7d7e0 100%);
+    background-attachment: fixed;
+    color: #2c3e50;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
 }
-main { flex: 1; }
-.js-plotly-plot { width: 100% !important; }
+
+a {
+    color: #18bc9c;
+    text-decoration: none;
+}
+a:hover {
+    color: #149f82;
+    text-decoration: underline;
+}
+
+/* ------------------------------------------------------- Навигация */
+.navbar {
+    background-color: #2c3e50;
+    color: #ecf0f1;
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.navbar-brand {
+    color: #ecf0f1 !important;
+    font-weight: bold;
+}
+.navbar-brand:hover {
+    text-decoration: none;
+    color: #ffffff !important;
+}
+.navbar .nav {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.navbar .nav-link {
+    color: #bdc3c7 !important;
+    font-size: 14px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: background-color 0.2s, color 0.2s;
+}
+.navbar .nav-link:hover {
+    background-color: #34495e;
+    color: #ecf0f1 !important;
+    text-decoration: none;
+}
+
+main {
+    flex: 1;
+}
+
+/* ------------------------------------------------------- Контейнеры */
+.container {
+    max-width: 1352px;
+}
+.card {
+    background-color: #ffffff;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+    margin-bottom: 15px;
+    border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+/* ------------------------------------------------------- Кнопки */
+.btn {
+    border-radius: 6px;
+    font-size: 14px;
+}
+.btn-primary {
+    --bs-btn-bg: #18bc9c;
+    --bs-btn-border-color: #18bc9c;
+    --bs-btn-hover-bg: #149f82;
+    --bs-btn-hover-border-color: #149f82;
+    --bs-btn-active-bg: #108a70;
+    --bs-btn-active-border-color: #108a70;
+    --bs-btn-disabled-bg: #18bc9c;
+    --bs-btn-disabled-border-color: #18bc9c;
+    color: #ffffff;
+}
+.btn-outline-primary {
+    --bs-btn-color: #18bc9c;
+    --bs-btn-border-color: #18bc9c;
+    --bs-btn-hover-bg: #18bc9c;
+    --bs-btn-hover-border-color: #18bc9c;
+    --bs-btn-active-bg: #149f82;
+    --bs-btn-active-border-color: #149f82;
+}
+.btn-outline-secondary {
+    --bs-btn-color: #546e7a;
+    --bs-btn-border-color: #b0bec5;
+    --bs-btn-hover-bg: #546e7a;
+    --bs-btn-hover-border-color: #546e7a;
+}
+.btn-print {
+    display: inline-block;
+    background-color: #2c3e50;
+    color: #ecf0f1;
+    border: 1px solid #34495e;
+}
+.btn-print:hover {
+    background-color: #34495e;
+    color: #ecf0f1;
+}
+
+/* ------------------------------------------------------- Формы */
+.form-control,
+.form-select {
+    border-radius: 6px;
+    border: 1px solid #cfd8dc;
+    font-size: 15px;
+}
+.form-control:focus,
+.form-select:focus {
+    outline: none;
+    border-color: #18bc9c;
+    box-shadow: 0 0 0 2px rgba(24, 188, 156, 0.2);
+}
+.form-check-input:checked,
+.detail-checkbox input[type="checkbox"] {
+    accent-color: #18bc9c;
+}
+.form-label {
+    color: #546e7a;
+    font-weight: 500;
+}
+
+fieldset {
+    border-color: #cfd8dc !important;
+}
+legend {
+    color: #546e7a;
+    font-weight: 600;
+}
+
+/* ------------------------------------------------------- Уведомления */
+.alert {
+    border-radius: 6px;
+    border-left-width: 4px;
+    font-size: 13px;
+}
+.alert-success {
+    background-color: #d0f2e8;
+    border-left: 4px solid #18bc9c;
+    color: #14705d;
+}
+.alert-danger {
+    background-color: #ffebee;
+    border-left: 4px solid #e74c3c;
+    color: #a93226;
+}
+.alert-warning {
+    background-color: #fff3cd;
+    border-left: 4px solid #f39c12;
+    color: #7d6608;
+}
+.alert-info {
+    background-color: #e3f2fd;
+    border-left: 4px solid #4fc3f7;
+    color: #21618c;
+}
+
+/* ------------------------------------------------------- Таблицы */
+.table {
+    --bs-table-striped-bg: #f0f7f5;
+}
+.table > thead th {
+    background-color: #2c3e50;
+    color: #ecf0f1;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.table > tbody tr {
+    border-bottom: 1px solid #eceff1;
+}
+.table th[scope="row"] {
+    color: #546e7a;
+    font-weight: 500;
+}
+
+/* ------------------------------------------------------- Прочее */
+.badge.text-bg-info {
+    background-color: #4fc3f7 !important;
+    color: #ffffff !important;
+}
+.spinner-border.text-primary {
+    color: #18bc9c !important;
+}
+code {
+    background-color: #f5f5f5;
+    padding: 2px 6px;
+    border-radius: 3px;
+    color: #e74c3c;
+}
+footer {
+    text-align: center;
+    font-size: 11px;
+    color: #78909c;
+    padding: 10px 0;
+    border-top: none;
+}
+.js-plotly-plot {
+    width: 100% !important;
+}
+
+@media print {
+    .navbar,
+    footer,
+    .btn,
+    #spinner {
+        display: none !important;
+    }
+    body {
+        background: white !important;
+        padding: 10mm;
+    }
+    .card {
+        border: none !important;
+        box-shadow: none !important;
+    }
+}
