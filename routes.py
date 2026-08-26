@@ -140,6 +140,7 @@ def register_routes(app: Flask) -> None:
             K=model.K, T=model.T, tau=model.tau,
             fit_quality=model.fit_quality, Ku=res.get("Ku"), Tu=res.get("Tu"),
             method_used=model.method, warnings=res.get("warnings", []),
+            pv_span=data.info.get("pv_span", [None, None]),
         )
         return res
 
@@ -160,6 +161,7 @@ def register_routes(app: Flask) -> None:
                 "Tu": state.get("Tu"),
                 "fit_quality": state.get("fit_quality"),
                 "info": state.get("info", {}),
+                "pv_span": state.get("pv_span", []),
                 "warnings": state.get("warnings", []),
                 "coeffs": state.get("coeffs"),
             },
@@ -186,6 +188,10 @@ def register_routes(app: Flask) -> None:
         ctype = payload.get("ctype", "PID")
         lam = payload.get("lambda")
         manual = payload.get("manual")  # {"Kp","Ti","Td"} при ручной коррекции
+        # Ручная ступенька задания (в единицах PV) для симуляции
+        sp_target = _num(payload.get("sp_target"))
+        sp_start = _num(payload.get("sp_start"))
+        use_saturation = bool(payload.get("use_saturation", False))
 
         state = get_state()
         if not state.get("K"):
@@ -213,20 +219,67 @@ def register_routes(app: Flask) -> None:
             except ValueError as exc:
                 return jsonify({"error": str(exc)}), 400
 
-        save_state(coeffs=coeffs, tuning_method=method, ctype=ctype)
+        save_state(coeffs=coeffs, tuning_method=method, ctype=ctype,
+                   sp_target=sp_target, sp_start=sp_start)
 
         # Время симуляции: покрывает профиль задания из данных
         # плюс запас на переходный процесс
         data_span = float(data.time[-1] - data.time[0])
         sim_time = min(max(2.0 * data_span, 60.0), 3600.0)
 
+        # Если задана только цель SP — стартуем из начальной рабочей точки
+        # (первое значение задания из данных)
+        if sp_target is not None and sp_start is None:
+            sp_start = float(data.sp[0])
+
+        dt_sim = max(data.dt / Config.SIM_SUBSTEPS, 0.01)
+
+        # П3: учёт насыщения — автоматически ограничиваем Kp, если
+        # регулятор уходит в упор (флаг «учитывать насыщение»).
+        # Важно: референсная ступенька и сама симуляция должны совпадать,
+        # иначе Kp ограничивается/проверяется по неверному сценарию.
+        if use_saturation and not manual:
+            sp0 = float(data.sp[0])
+            ref_span = max(abs(float(data.sp[-1]) - sp0), 1.0)
+            sim_start_sp = sp_start if sp_start is not None else sp0
+            sim_target_sp = sp_target if sp_target is not None \
+                else sp0 + ref_span
+            coeffs = pid_tuning.limit_kp_by_saturation(
+                coeffs, model, ctype,
+                sim_start_sp, sim_target_sp,
+                dt_sim=dt_sim, sim_time=sim_time,
+                max_kp_factor=Config.SATURATION_MAX_KP_FACTOR,
+                step_reduction=Config.SATURATION_STEP_REDUCTION,
+                warn_sat_frac=Config.SATURATION_WARN_FRAC,
+                overshoot_target=Config.SATURATION_OVERSHOOT_TARGET)
+            # Используем ту же ступеньку в главной симуляции
+            sp_start, sp_target = sim_start_sp, sim_target_sp
+
+        save_state(coeffs=coeffs)
+
         sim = simulator.simulate_closed_loop(
             model.K, model.T, model.tau, ctype,
             coeffs["Kp"], coeffs["Ti"], coeffs["Td"],
-            dt_sim=max(data.dt / Config.SIM_SUBSTEPS, 0.01),
+            dt_sim=dt_sim,
             sim_time=sim_time,
-            sp_array=data.sp)
-        metrics = simulator.quality_metrics(sim[0], sim[1], sim[2])
+            sp_array=data.sp,
+            sp_start=sp_start, sp_target=sp_target)
+        metrics = simulator.quality_metrics(sim[0], sim[1], sim[2], sim[3])
+
+        # П1: нештатные качества настройки — предупреждения для пользователя
+        quality_warnings: list[str] = []
+        if metrics["overshoot"] > Config.OVERSHOOT_WARN_THRESHOLD:
+            quality_warnings.append(
+                f"Перерегулирование {metrics['overshoot']:.0f} % — контур "
+                "раскачивается. Снизьте Kp или выберите CHR/IMC/ITAE.")
+        if metrics["sat_frac"] > Config.SATURATION_WARN_FRAC:
+            quality_warnings.append(
+                f"Регулятор работает в насыщении "
+                f"({metrics['sat_frac'] * 100:.0f} % времени, ход до "
+                f"{metrics['cv_max']:.0f} %) — снизьте Kp для линейного режима.")
+
+        # П2: оценка управляемости объекта
+        ctrl = pid_tuning.controllability(model)
 
         # Отклик идентифицированной FOPDT-модели на фактический сигнал CV
         # — для графика «Модель FOPDT и данные». Как и в identify_curve_fit,
@@ -238,6 +291,8 @@ def register_routes(app: Flask) -> None:
         response = {
             "coeffs": coeffs,
             "metrics": metrics,
+            "quality_warnings": quality_warnings,
+            "controlability": ctrl,
             "model": {"K": state["K"], "T": state["T"], "tau": state["tau"],
                       "Ku": state.get("Ku"), "Tu": state.get("Tu")},
             "warnings": state.get("warnings", []),

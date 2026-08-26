@@ -8,6 +8,8 @@
 <div class="alert alert-warning">{{ warning }}</div>
 {% endfor %}
 
+<div id="quality-warnings"></div>
+
 <div class="row g-4">
   <!-- Панель управления -->
   <div class="col-lg-4">
@@ -27,6 +29,10 @@
         {% if state.fit_quality == state.fit_quality and state.fit_quality is not none %}
         <tr><th>R² аппроксимации</th><td>{{ "%.3f"|format(state.fit_quality) }}</td></tr>
         {% endif %}
+        <tr><th>Управляемость</th><td id="model-ctrl">—</td></tr>
+        <tr id="model-ctrl-hint-row" style="display:none;">
+          <td colspan="2" id="model-ctrl-hint" class="text-muted small"></td>
+        </tr>
       </table>
     </div>
 
@@ -57,20 +63,51 @@
         <input type="number" class="form-control" id="lambda-input"
                value="0" min="0" step="1">
       </div>
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" id="use-saturation">
+        <label class="form-check-label" for="use-saturation">
+          Учитывать насыщение регулятора
+          <span class="text-muted small">(ограничить Kp, чтобы CV не упирался в 0–100 %)</span>
+        </label>
+      </div>
       <button class="btn btn-primary w-100" id="recalc-btn">Пересчитать</button>
       <div class="spinner-border text-primary mt-3 d-none mx-auto" id="spinner"
            role="status"><span class="visually-hidden">Загрузка…</span></div>
     </div>
 
     <div class="card shadow-sm p-3 mb-3">
-      <h5 class="mb-3">Коэффициенты</h5>
-      <table class="table table-sm table-striped">
-        <tr><th>Kp</th><td id="coef-kp">{{ "%.4f"|format(state.coeffs.Kp) if state.coeffs else "—" }}</td></tr>
-        <tr><th>Ti, с</th><td id="coef-ti">{{ "%.2f"|format(state.coeffs.Ti) if state.coeffs and state.coeffs.Ti else "—" }}</td></tr>
-        <tr><th>Td, с</th><td id="coef-td">{{ "%.2f"|format(state.coeffs.Td) if state.coeffs and state.coeffs.Td else "—" }}</td></tr>
-      </table>
-      <div id="metrics-box" class="small text-muted"></div>
-      <div class="d-grid gap-2 mt-2">
+      <h5 class="mb-3">Коэффициенты и задание</h5>
+      <div class="mb-2">
+        <label for="in-kp" class="form-label">Kp (усиление)</label>
+        <input type="number" step="any" class="form-control" id="in-kp"
+               value="{{ '%.6g'|format(state.coeffs.Kp) if state.coeffs else '' }}"
+               required>
+      </div>
+      <div class="mb-2">
+        <label for="in-ti" class="form-label">Ti (интегрирование), с</label>
+        <input type="number" step="any" class="form-control" id="in-ti"
+               value="{{ '%.6g'|format(state.coeffs.Ti) if state.coeffs and state.coeffs.Ti else '' }}">
+      </div>
+      <div class="mb-2">
+        <label for="in-td" class="form-label">Td (дифференцирование), с</label>
+        <input type="number" step="any" class="form-control" id="in-td"
+               value="{{ '%.6g'|format(state.coeffs.Td) if state.coeffs and state.coeffs.Td else '' }}">
+      </div>
+      <div class="mb-2">
+        <label for="in-sp" class="form-label">SP (задание), ед. PV</label>
+        <input type="number" step="any" class="form-control" id="in-sp"
+               placeholder="напр., {{ '%.3g'|format(state.pv_span[1]) if state.pv_span and state.pv_span[1] is not none else '2.0' }}">
+        <div class="form-text">Целевое значение задания. Пусто — используется
+          профиль SP из данных.</div>
+      </div>
+      <div id="metrics-box" class="small text-muted mb-2"></div>
+      <div class="d-grid gap-2">
+        <button class="btn btn-primary w-100" id="run-sim-btn">Запустить симуляцию</button>
+        <button class="btn btn-outline-secondary w-100" id="recalc-btn">Пересчитать по методу</button>
+      </div>
+      <div class="spinner-border text-primary mt-3 d-none mx-auto" id="spinner"
+           role="status"><span class="visually-hidden">Загрузка…</span></div>
+      <div class="d-grid gap-2 mt-3">
         <a href="{{ url_for('adjust_page') }}" class="btn btn-outline-secondary btn-sm">Ручная корректировка</a>
         <a href="{{ url_for('export_pdf') }}" class="btn btn-outline-danger btn-sm">Экспорт PDF</a>
         <a href="{{ url_for('export_excel') }}" class="btn btn-outline-success btn-sm">Экспорт Excel</a>

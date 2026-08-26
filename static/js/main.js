@@ -56,21 +56,50 @@ const PIDApp = (() => {
   }
 
   function updateCoeffs(data) {
-    $("#coef-kp").text(fmt(data.coeffs.Kp));
-    $("#coef-ti").text(data.coeffs.Ti ? fmt(data.coeffs.Ti, 2) : "—");
-    $("#coef-td").text(data.coeffs.Td ? fmt(data.coeffs.Td, 2) : "—");
+    $("#in-kp").val(data.coeffs.Kp != null ? fmt(data.coeffs.Kp) : "");
+    $("#in-ti").val(data.coeffs.Ti != null ? fmt(data.coeffs.Ti, 2) : "");
+    $("#in-td").val(data.coeffs.Td != null ? fmt(data.coeffs.Td, 2) : "");
 
     if (data.model) {
       $("#model-K").text(fmt(data.model.K));
       $("#model-T").text(fmt(data.model.T, 2));
       $("#model-tau").text(fmt(data.model.tau, 2));
     }
+
+    // П2: оценка управляемости объекта
+    if (data.controlability) {
+      const c = data.controlability;
+      const badge = c.level === "difficult" ? "#e74c3c"
+        : c.level === "moderate" ? "#f39c12" : "#18bc9c";
+      $("#model-ctrl").html(
+        `<span class="badge" style="background-color:${badge};">${c.label} (τ/T=${c.ratio})</span>`);
+      $("#model-ctrl-hint").text(c.hints.join("; "));
+      $("#model-ctrl-hint-row").show();
+    }
+    if (data.coeffs && data.coeffs.saturation_limited) {
+      $("#model-ctrl-hint").prepend("Kp ограничен из-за насыщения. ");
+    }
+
+    // П1: предупреждения о качестве настройки + метрики
     const m = data.metrics;
     if (m) {
+      let satTxt = "";
+      if (m.sat_frac != null && m.sat_frac > 0.05) {
+        satTxt = `, <span class="text-danger">насыщение ${(m.sat_frac * 100).toFixed(0)} %</span>`;
+      }
       $("#metrics-box").html(
         `Перерегулирование: <b>${m.overshoot} %</b>, ` +
         `время регулирования: <b>${fmt(m.settling_time, 1)} с</b>, ` +
-        `IAE: <b>${m.iae}</b>`);
+        `IAE: <b>${m.iae}</b>${satTxt}`);
+    }
+    if (data.quality_warnings && data.quality_warnings.length) {
+      $("#quality-warnings").empty();
+      data.quality_warnings.forEach(w => {
+        $("#quality-warnings").append(
+          `<div class="alert alert-warning py-1 px-2 mb-1 small">${w}</div>`);
+      });
+    } else {
+      $("#quality-warnings").empty();
     }
   }
 
@@ -79,12 +108,30 @@ const PIDApp = (() => {
     $("#recalc-btn").prop("disabled", busy);
   }
 
-  function recalculate(manual) {
-    const payload = manual ? manual : {
-      method: $("#method").val(),
-      ctype: $("#ctype").val(),
-      lambda: parseFloat($("#lambda-input").val()) || null,
+  function collectManual() {
+    return {
+      manual: {
+        Kp: parseFloat($("#in-kp").val()),
+        Ti: parseFloat($("#in-ti").val()) || null,
+        Td: parseFloat($("#in-td").val()) || null,
+      },
     };
+  }
+
+  function recalculate(manual) {
+    const payload = manual || {};
+    payload.method = $("#method").val();
+    payload.ctype = $("#ctype").val();
+    payload.lambda = parseFloat($("#lambda-input").val()) || null;
+    payload.use_saturation = $("#use-saturation").is(":checked");
+
+    // Ручная ступенька задания: приоритет — SP из поля, иначе из данных
+    const spVal = $("#in-sp").val();
+    payload.sp_target = spVal !== "" && spVal !== null
+      ? parseFloat(spVal) : null;
+    payload.sp_start = null;
+    if (!manual) { delete payload.manual; }
+
     setBusy(true);
     $.ajax({
       url: "/api/calculate",
@@ -117,6 +164,7 @@ const PIDApp = (() => {
     });
 
     $("#recalc-btn").on("click", () => recalculate());
+    $("#run-sim-btn").on("click", () => recalculate(collectManual()));
 
     // Страница корректировки: отправляем ручные значения и переходим к графикам
     $("#adjust-form").on("submit", (e) => {

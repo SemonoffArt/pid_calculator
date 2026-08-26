@@ -115,6 +115,45 @@ jm = r_manual.get_json()
 check("Ручные коэффициенты применены",
       jm["coeffs"]["Kp"] == 10.0 and jm["metrics"] != j["metrics"])
 
+# Ручное задание SP: ступенька к целевому значению (консервативные
+# коэффициенты, чтобы PV успело установиться)
+r_sp = client.post("/api/calculate",
+                   json={"manual": {"Kp": 0.5, "Ti": 40.0, "Td": 3.0},
+                         "sp_target": 60.0})
+jsp = r_sp.get_json()
+sps = jsp["sim"]["sp"]
+check("Ступенька SP к цели", abs(sps[-1] - 60.0) < 0.01)
+check("PV стремится к целевому SP", abs(jsp["sim"]["pv"][-1] - 60.0) < 3.0)
+print(f"  sp_target=60: sp_end={sps[-1]:.2f}, "
+      f"pv_end={jsp['sim']['pv'][-1]:.2f}")
+
+# П1: предупреждения о качестве — агрессивная настройка ЗН раскачивает контур
+r_zn = client.post("/api/calculate", json={"method": "zn_open",
+                                           "ctype": "PID"})
+jzn = r_zn.get_json()
+check("ЗН возвращает метрики с насыщением", "sat_frac" in jzn["metrics"])
+check("ЗН с агрессивным перерегулированием даёт предупреждение",
+      len(jzn["quality_warnings"]) > 0 or jzn["metrics"]["overshoot"] <= 50)
+
+# П2: оценка управляемости объекта
+check("Возвращается оценка управляемости",
+      "controlability" in jzn and "label" in jzn["controlability"])
+print(f"  Управляемость: {jzn['controlability']['label']} "
+      f"(τ/T={jzn['controlability']['ratio']})")
+
+# П3: учёт насыщения — Kp ограничивается, чтобы контур не раскачивался
+r_sat = client.post("/api/calculate", json={"method": "zn_open",
+                                            "ctype": "PID",
+                                            "use_saturation": True})
+jsat = r_sat.get_json()
+check("С флагом насыщения Kp ниже исходного ЗН",
+      jsat["coeffs"]["Kp"] < jzn["coeffs"]["Kp"])
+check("С флагом насыщения перерегулирование в рамках",
+      jsat["metrics"]["overshoot"] <= 60)
+print(f"  ЗН Kp={jzn['coeffs']['Kp']:.2f} (ov={jzn['metrics']['overshoot']:.0f}%)"
+      f" -> с флагом Kp={jsat['coeffs']['Kp']:.2f} "
+      f"(ov={jsat['metrics']['overshoot']:.0f}%)")
+
 r = client.get("/adjust")
 check("GET /adjust = 200", r.status_code == 200)
 

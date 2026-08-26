@@ -85,15 +85,23 @@ def simulate_closed_loop(K: float, T: float, tau: float, controller_type: str,
                          kp: float, ti: float | None, td: float | None,
                          dt_sim: float = 0.05, sim_time: float = 60.0,
                          sp_profile: str = "step",
-                         sp_array: np.ndarray | None = None):
+                         sp_array: np.ndarray | None = None,
+                         sp_start: float | None = None,
+                         sp_target: float | None = None):
     """
     Симуляция отклика замкнутой системы.
 
     sp_profile="step" — ступенька задания величиной 10 % диапазона;
-    sp_profile="array" — задание из массива данных (интерполированного).
-    Возвращает (time, sp, pv, cv).
+    sp_profile="array" — задание из массива данных (интерполированного);
+    sp_start/sp_target — ручная ступенька задания от sp_start к sp_target
+    (приоритетнее sp_profile/sp_array). Возвращает (time, sp, pv, cv).
     """
-    if sp_profile == "array" and sp_array is not None and len(sp_array) > 1:
+    if sp_start is not None and sp_target is not None:
+        time = np.arange(0.0, sim_time + dt_sim * 0.5, dt_sim)
+        sp = np.full(len(time), float(sp_start))
+        step_at = int(min(0.1 * len(time), len(time) - 2))
+        sp[step_at:] = float(sp_target)
+    elif sp_profile == "array" and sp_array is not None and len(sp_array) > 1:
         src_t = np.linspace(0.0, sim_time, len(sp_array))
         time = np.arange(0.0, sim_time + dt_sim * 0.5, dt_sim)
         sp = np.interp(time, src_t, sp_array)
@@ -118,13 +126,37 @@ def simulate_closed_loop(K: float, T: float, tau: float, controller_type: str,
     return t, sp, pv, cv
 
 
-def quality_metrics(time: np.ndarray, sp: np.ndarray, pv: np.ndarray) -> dict:
-    """Показатели качества переходного процесса."""
+def _saturation_metrics(cv: np.ndarray, lo: float = 0.0,
+                        hi: float = 100.0) -> tuple[float, float]:
+    """Доля времени и максимальный ход, когда CV упирается в пределы.
+
+    Возвращает (sat_frac, cv_max): sat_frac — доля точек, где CV на границе
+    (±0.5 % от предела), cv_max — максимум CV.
+    """
+    if cv is None or len(cv) == 0:
+        return 0.0, 0.0
+    tol = 0.005 * (hi - lo)
+    at_bound = np.isclose(cv, lo, atol=tol) | np.isclose(cv, hi, atol=tol)
+    sat_frac = float(np.mean(at_bound))
+    return sat_frac, float(np.max(cv))
+
+
+def quality_metrics(time: np.ndarray, sp: np.ndarray, pv: np.ndarray,
+                    cv: np.ndarray | None = None) -> dict:
+    """Показатели качества переходного процесса.
+
+    cv (опционально, 0..100 %) — если передан, дополнительно вычисляются
+    доля времени насыщения регулятора и максимальный ход CV.
+    """
     target = sp[-1]
     start = pv[0]
     delta = target - start
     if abs(delta) < 1e-12:
-        return {"overshoot": 0.0, "settling_time": 0.0, "iae": 0.0}
+        base = {"overshoot": 0.0, "settling_time": 0.0, "iae": 0.0}
+        sat_frac, cv_max = _saturation_metrics(cv)
+        base["sat_frac"] = round(sat_frac, 4)
+        base["cv_max"] = round(cv_max, 2)
+        return base
 
     peak = float(np.max((pv - start) / delta)) if delta > 0 else \
         float(np.min((pv - start) / delta))
@@ -141,6 +173,9 @@ def quality_metrics(time: np.ndarray, sp: np.ndarray, pv: np.ndarray) -> dict:
         settling = float("nan")  # процесс не установился
 
     iae = float(np.trapezoid(np.abs(sp - pv), time))
+    sat_frac, cv_max = _saturation_metrics(cv)
     return {"overshoot": round(float(overshoot), 2),
             "settling_time": round(float(settling), 3),
-            "iae": round(iae, 4)}
+            "iae": round(iae, 4),
+            "sat_frac": round(sat_frac, 4),
+            "cv_max": round(cv_max, 2)}

@@ -50,11 +50,25 @@ print("api ->", resp.status,
       "коэффициенты:", {k: round(v, 4) if v else v
                         for k, v in d["coeffs"].items()})
 print("графики raw/sim не пустые:", len(d["raw"]["time"]), len(d["sim"]["time"]))
+assert "quality_warnings" in d and "controlability" in d and \
+    "sat_frac" in d["metrics"], "нет новых полей в ответе"
 
 # Экспорт тоже должен работать без массивов в сессии
 for path in ("/export/pdf", "/export/excel"):
     resp = opener.open("http://127.0.0.1:5000" + path)
     print(path, "->", resp.status, len(resp.read()), "байт")
+
+# Ручные коэффициенты + задание SP
+req3 = ur.Request(
+    "http://127.0.0.1:5000/api/calculate",
+    data=json.dumps({"manual": {"Kp": 5.0, "Ti": 8.0, "Td": 1.0},
+                     "sp_target": 60.0}).encode(),
+    headers={"Content-Type": "application/json"})
+d3 = json.loads(opener.open(req3).read())
+print("manual+sp_target -> Kp%.2f, sp_end=%.2f, pv_end=%.2f"
+      % (d3["coeffs"]["Kp"], d3["sim"]["sp"][-1], d3["sim"]["pv"][-1]))
+assert abs(d3["sim"]["sp"][-1] - 60.0) < 0.01
+assert json.dumps(d3, allow_nan=False), "в ответе NaN"
 
 assert cookie_size <= 4000, "куки превышают лимит!"
 assert len(d["raw"]["time"]) > 10 and len(d["sim"]["time"]) > 10
