@@ -61,6 +61,32 @@
         </div>
       </fieldset>
 
+      <fieldset class="border rounded p-3 mb-3">
+        <legend class="fs-6">Единицы измерения PV / SP</legend>
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox" id="normalize" name="normalize" value="1">
+          <label class="form-check-label" for="normalize">
+            Нормализовать PV и SP в 0–100 %
+          </label>
+          <div class="form-text">
+            Пересчитывает PV и SP в проценты шкалы (value / max × 100) —
+            K становится безразмерным (~1), значения Kp привычного порядка.
+          </div>
+        </div>
+        <div class="mb-0" id="norm-scale-group" style="display:none;">
+          <label for="norm-scale" class="form-label">
+            Максимум шкалы (масштаб), ед. изм.
+            <span class="text-muted">(если в CSV нет строки Y-max)</span>
+          </label>
+          <input type="number" step="any" class="form-control" id="norm-scale"
+                 name="norm_scale" placeholder="например, 6">
+          <div class="form-text">
+            Если в файле есть строка <code>Y-max</code>, масштаб берётся из
+            неё автоматически и это поле не требуется.
+          </div>
+        </div>
+      </fieldset>
+
       <button type="submit" class="btn btn-primary btn-lg">Загрузить и рассчитать</button>
     </form>
 
@@ -71,5 +97,18 @@
 
     {% include "_reference_upload.html" %}
   </div>
-</div>
+ </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Показ поля «масштаб» только когда включена нормализация
+  $(function () {
+    function toggleNormScale() {
+      $("#norm-scale-group").toggle($("#normalize").is(":checked"));
+    }
+    $("#normalize").on("change", toggleNormScale);
+    toggleNormScale();
+  });
+</script>
 {% endblock %}

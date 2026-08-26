@@ -95,6 +95,27 @@ with open("sample_data/sample_open_loop.csv", "rb") as f:
                     content_type="multipart/form-data")
 check("POST /upload redirect", r.status_code == 302)
 
+# Нормализация: базовый масштаб из данных с Y-max (CuSO4) → K безразмерный
+import io
+with open("tmp/CuSO4.csv", "rb") as f:
+    r = client.post("/upload", data={"file": (f, "cuso4.csv"),
+                                     "normalize": "1"},
+                    content_type="multipart/form-data")
+check("POST /upload (нормализация) redirect", r.status_code == 302)
+j_norm = client.post("/api/calculate",
+                     json={"method": "imc", "ctype": "PID"}).get_json()
+check("Нормализованный K в диапазоне ~1", 0.5 <= abs(j_norm["model"]["K"]) <= 3.0)
+print(f"  нормализация: K={j_norm['model']['K']:.3f}, "
+      f"Kp={j_norm['coeffs']['Kp']:.3f} (масштаб из Y-max)")
+html_norm = client.get("/results").data.decode()
+check("Бейдж «нормализовано» в UI", "нормализовано" in html_norm)
+
+# Возвращаем обычный пример для остальных тестов
+with open("sample_data/sample_open_loop.csv", "rb") as f:
+    r = client.post("/upload", data={"file": (f, "sample.csv"),
+                                     "id_mode": "auto"},
+                    content_type="multipart/form-data")
+
 r = client.get("/results")
 check("GET /results = 200", r.status_code == 200)
 

@@ -83,6 +83,9 @@ def load_csv(file_storage) -> pd.DataFrame:
 
     time_idx, pv_idx, sp_idx, cv_idx = col_map
 
+    # --- Максимальные инженерные значения из метаданных (Y-max) ---
+    y_max = _extract_ymax(rows, header_idx, col_map)
+
     # --- Время: число или дата-время ---
     times = _parse_time_column([r[time_idx] for r in data])
 
@@ -111,6 +114,7 @@ def load_csv(file_storage) -> pd.DataFrame:
             raise DataError(f"Колонка '{col}' содержит недостаточно данных.")
     if len(df) < 10:
         raise DataError("Слишком мало данных (нужно минимум 10 строк).")
+    df.attrs["y_max"] = y_max
     return df
 
 
@@ -178,6 +182,36 @@ def _is_data_row(r: list[str]) -> bool:
     if not (_is_number(r[0]) or _parse_datetime(r[0]) is not None):
         return False
     return all(_try_float(c) is not None for c in r[1:4])
+
+
+# Варианты написания метки максимального значения в SCADA-экспорте
+_YMAX_LABELS = {"Y-MAX", "YMAX", "Y_MAX", "MAX"}
+
+
+def _extract_ymax(rows: list[list[str]],
+                  header_idx: int,
+                  col_map: tuple[int, int, int, int]) -> dict:
+    """
+    Достаёт максимальные инженерные значения из метаданных Y-max.
+
+    Строка вида ["Y-max", "<pv_max>", "<sp_max>", "<cv_max>"] появляется в
+    SCADA-экспорте перед данными. Возвращает словарь {"pv","sp","cv"} с
+    числами (или None, если строка отсутствует / поле нечисловое).
+    """
+    _, pv_idx, sp_idx, cv_idx = col_map
+
+    def cell(idx: int) -> float | None:
+        if idx < len(r) and _is_number(r[idx]):
+            v = _try_float(r[idx])
+            if v is not None and v > 0:
+                return v
+        return None
+
+    for r in rows[header_idx + 1:]:
+        if r and (r[0] or "").strip().upper() in _YMAX_LABELS:
+            return {"pv": cell(pv_idx), "sp": cell(sp_idx),
+                    "cv": cell(cv_idx)}
+    return {"pv": None, "sp": None, "cv": None}
 
 
 _DT_FORMATS = ("%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M:%S,%f",
@@ -282,6 +316,24 @@ def interpolate(df: pd.DataFrame, step: float | None) -> tuple[np.ndarray, ...]:
     if len(grid) < 10:
         raise DataError("После интерполяции осталось слишком мало точек.")
     return grid, np.interp(grid, t, pv), np.interp(grid, t, sp), np.interp(grid, t, cv)
+
+
+def normalize(df: pd.DataFrame, scale: float | None) -> pd.DataFrame:
+    """
+    Нормализует PV и SP в 0..100 % шкалы инженерной единицы.
+
+    scale — максимальное значение инженерной единицы (например, Y-max из
+    CSV или введённое пользователем вручную). Каждая точка пересчитывается:
+        value_norm = value / scale * 100
+    CV (0..100 %) не затрагивается. Если scale не задан — возвращает
+    копию без изменений.
+    """
+    if scale is None or scale <= 0:
+        return df
+    out = df.copy()
+    for col in ("PV", "SP"):
+        out[col] = out[col] / scale * 100.0
+    return out
 
 
 def median_filter(x: np.ndarray, window: int) -> np.ndarray:

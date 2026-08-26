@@ -88,6 +88,26 @@ def register_routes(app: Flask) -> None:
 
         try:
             df = data_loader.load_csv(file)
+
+            # Нормализация PV/SP в 0..100 % шкалы инженерной единицы
+            normalize = request.form.get("normalize") == "1"
+            norm_scale = None
+            if normalize:
+                # Масштаб: из Y-max в CSV; иначе — из поля на странице
+                norm_scale = df.attrs.get("y_max", {}).get("pv")
+                if norm_scale is None:
+                    scale_raw = request.form.get("norm_scale", "").strip()
+                    if scale_raw:
+                        try:
+                            norm_scale = float(scale_raw.replace(",", "."))
+                        except ValueError:
+                            norm_scale = None
+                    if norm_scale is None or norm_scale <= 0:
+                        flash("Для нормализации укажите максимум шкалы "
+                              "(или добавьте строку Y-max в CSV).", "danger")
+                        return redirect(url_for("index"))
+                df = data_loader.normalize(df, norm_scale)
+
             processed = data_loader.preprocess(df, interp_step, filter_window)
         except data_loader.DataError as exc:
             flash(str(exc), "danger")
@@ -107,6 +127,8 @@ def register_routes(app: Flask) -> None:
             interp_step=interp_step,
             filter_window=filter_window,
             id_mode=request.form.get("id_mode", "auto"),
+            normalized=bool(normalize),
+            norm_scale=norm_scale,
         )
 
         # Сразу выполняем первичную идентификацию и расчёт
@@ -164,6 +186,8 @@ def register_routes(app: Flask) -> None:
                 "pv_span": state.get("pv_span", []),
                 "warnings": state.get("warnings", []),
                 "coeffs": state.get("coeffs"),
+                "normalized": state.get("normalized", False),
+                "norm_scale": state.get("norm_scale"),
             },
         )
 

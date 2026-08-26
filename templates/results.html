@@ -14,7 +14,11 @@
   <!-- Панель управления -->
   <div class="col-lg-4">
     <div class="card shadow-sm p-3 mb-3">
-      <h5 class="mb-3">Параметры модели FOPDT</h5>
+      <h5 class="mb-3">Параметры модели FOPDT
+        {% if state.normalized %}
+          <span class="badge text-bg-success">нормализовано</span>
+        {% endif %}
+      </h5>
       <table class="table table-sm table-striped">
         <tr><th>K (усиление)</th>
             <td id="model-K">{{ "%.4f"|format(state.K or 0) }}
@@ -33,6 +37,10 @@
         <tr id="model-ctrl-hint-row" style="display:none;">
           <td colspan="2" id="model-ctrl-hint" class="text-muted small"></td>
         </tr>
+        {% if state.normalized and state.norm_scale %}
+        <tr><th>Единицы PV/SP</th>
+            <td class="small">0–100 % (масштаб {{ "%.3g"|format(state.norm_scale) }})</td></tr>
+        {% endif %}
       </table>
     </div>
 
