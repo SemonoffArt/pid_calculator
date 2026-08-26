@@ -214,6 +214,39 @@ footer {
     width: 100% !important;
 }
 
+/* ------------------------------------------------ Справочник: методы */
+.meth-title {
+    font-weight: 600;
+    color: #2c3e50;
+}
+.meth-block {
+    padding: 10px 12px;
+    background-color: #f8fafb;
+    border: 1px solid #cfd8dc;
+    border-left: 4px solid #18bc9c;
+    border-radius: 6px;
+    margin-bottom: 12px;
+}
+.meth-block:last-child {
+    margin-bottom: 0;
+}
+.meth-formula {
+    margin: 8px 0 2px 0;
+    padding: 8px 10px;
+    background-color: #ffffff;
+    border-radius: 4px;
+    overflow-x: auto;
+    /* выравнивание формул по центру блока */
+    text-align: center;
+}
+.meth-formula mjx-container {
+    margin: 4px auto !important;
+    display: block !important;
+}
+.meth-formula .MJX-TEX {
+    font-size: 1.05rem;
+}
+
 @media print {
     .navbar,
     footer,

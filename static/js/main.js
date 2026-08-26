@@ -27,6 +27,18 @@ const PIDApp = (() => {
                        xaxis: { title: "Время, с" } }, layout), cfg);
   }
 
+  function drawModel(mr, raw) {
+    const traces = [
+      { x: raw.time, y: raw.pv, name: "PV (данные)", mode: "lines",
+        line: { color: "#2c3e50" } },
+      { x: mr.time, y: mr.pv, name: "PV (модель FOPDT)", mode: "lines",
+        line: { color: "#18bc9c", dash: "dash", width: 2 } },
+    ];
+    Plotly.react("plot-model", traces,
+                 Object.assign({ yaxis: { title: "PV" },
+                                xaxis: { title: "Время, с" } }, layout), cfg);
+  }
+
   function drawSim(sim) {
     Plotly.react("plot-sim", [
       { x: sim.time, y: sim.sp, name: "SP (задание)", mode: "lines",
@@ -83,6 +95,7 @@ const PIDApp = (() => {
       .done((data) => {
         if (data.error) { alert("Ошибка: " + data.error); return; }
         drawRaw(data.raw);
+        drawModel(data.model_response, data.raw);
         drawSim(data.sim);
         updateCoeffs(data);
       })

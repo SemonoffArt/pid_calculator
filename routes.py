@@ -228,6 +228,13 @@ def register_routes(app: Flask) -> None:
             sp_array=data.sp)
         metrics = simulator.quality_metrics(sim[0], sim[1], sim[2])
 
+        # Отклик идентифицированной FOPDT-модели на фактический сигнал CV
+        # — для графика «Модель FOPDT и данные». Как и в identify_curve_fit,
+        # вход берётся в отклонениях от начальной точки, а к отклику
+        # добавляется стартовый уровень PV.
+        model_pv = data.pv[0] + identification.fopdt_response(
+            data.time, data.cv - data.cv[0], model.K, model.T, model.tau)
+
         response = {
             "coeffs": coeffs,
             "metrics": metrics,
@@ -237,6 +244,10 @@ def register_routes(app: Flask) -> None:
             "raw": {
                 "time": data.time.tolist(), "pv": data.pv.tolist(),
                 "sp": data.sp.tolist(), "cv": data.cv.tolist(),
+            },
+            "model_response": {
+                "time": data.time.tolist(),
+                "pv": model_pv.tolist(),
             },
             "sim": {
                 "time": sim[0].tolist()[::2],   # прореживаем для графика
