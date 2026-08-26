@@ -81,6 +81,24 @@ print(f"  Симуляция: метрики {metrics}")
 check("Симуляция сходится к заданию",
       abs(sim[2][-1] - sim[1][-1]) < 0.05 * abs(sim[1][-1]))
 
+# --- Проверка соответствия внешнему референсу (ЗН, PI, K=1.58/T=7.57/tau=2.1,
+# ступенька SP 0->50): подтверждает корректность дискретизации и anti-windup.
+ref_model = identification.FopdtModel(K=1.58, T=7.57, tau=2.1)
+ref_coeffs = pid_tuning.tune("zn_open", ref_model, "PI")
+check("ЗН-PI даёт референсные Kp/Ti",
+      abs(ref_coeffs["Kp"] - 2.0533) < 0.01 and abs(ref_coeffs["Ti"] - 7.0) < 0.1)
+for clip, ref_ov in ((True, 13.7), (False, 46.5)):
+    t, sp, pv, cv = simulator.simulate_closed_loop(
+        ref_model.K, ref_model.T, ref_model.tau, "PI",
+        ref_coeffs["Kp"], ref_coeffs["Ti"], None,
+        dt_sim=0.05, sim_time=100, sp_start=0.0, sp_target=50.0,
+        cv_clip=clip)
+    q = simulator.quality_metrics(t, sp, pv, cv)
+    check(f"Референс (clip={clip}) OV≈{ref_ov}%",
+          abs(q["overshoot"] - ref_ov) < 3.0)
+    print(f"  Референс clip={clip}: OV={q['overshoot']:.1f}% "
+          f"(ожид. {ref_ov}%), IAE={q['iae']:.1f}")
+
 # ------------------------------------------------------------ route tests
 app.config["TESTING"] = True
 client = app.test_client()

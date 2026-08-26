@@ -1,12 +1,16 @@
 """
 Симуляция замкнутой системы "ПИД + объект FOPDT".
 
-Используются дискретные уравнения с шагом dt_sim; для устойчивости
-интегрирования каждый шаг данных делится на подшаги (substeps).
-
 Регулятор в идеальной форме:
     u = Kp*(e + 1/Ti*∫e dt + Td*de_f/dt), de_f — производная с фильтром.
-Объект: dy/dt = (K*u(t - tau) - y)/T.
+Объект интегрируется ТОЧНО (ZOH-дискретизация звена первого порядка с
+запаздыванием), что при том же шаге даёт устойчивый и корректный отклик
+в отличие от метода Эйлера.
+
+Для предотвращения «раскрутки» интегратора при насыщении выхода
+используется anti-windup (back-calculation). Насыщение CV (0..100 %)
+может быть отключено (cv_clip=False) — например, для сравнения с
+внешними калькуляторами.
 """
 from __future__ import annotations
 
@@ -15,31 +19,42 @@ import numpy as np
 
 def _simulate(K: float, T: float, tau: float,
               kp: float, ti: float | None, td: float | None,
-              d_filter_n: float, time: np.ndarray, sp: np.ndarray
-              ) -> tuple[np.ndarray, np.ndarray]:
-    """Дискретная симуляция замкнутого контура. Возвращает t, pv, cv."""
+              d_filter_n: float, time: np.ndarray, sp: np.ndarray,
+              cv_clip: bool = True, cv_min: float = 0.0,
+              cv_max: float = 100.0,
+              substeps: int = 5) -> tuple[np.ndarray, np.ndarray]:
+    """Дискретная симуляция замкнутого контура. Возвращает t, pv, cv.
+
+    Каждый шаг данных делится на подшаги (substeps), внутри которых объект
+    интегрируется ТОЧНО (ZOH-дискретизация звена первого порядка). Мелкий
+    подшаг важен для устойчивости контуров с усилением, близким к границе.
+    """
     n = len(time)
     dt = time[1] - time[0]
-    m = 5                                   # подшаги внутри шага данных
+    m = max(1, int(substeps))
     h = dt / m
     delay_steps = max(0, int(round(tau / h)))
 
-    # Буфер задержки управляющего воздействия
-    buf_len = delay_steps + m * 2
+    # Буфер задержки управляющего воздействия (кольцевой массив)
+    buf_len = max(delay_steps + m + 2, m + 2)
     ubuf = np.zeros(buf_len)
-    ubuf[:] = 0.0                           # начальное воздействие
 
     y = sp[0]                               # начальное PV = начальное SP
     integ = 0.0                             # интеграл ошибки
     e_prev = sp[0] - y                      # предыдущая ошибка
     dfilt = 0.0                             # состояние D-фильтра
 
+    # Точная ZOH-дискретизация на подшаге h: y = a*y + b*u_delayed
+    if T > 0:
+        a = np.exp(-h / T)
+        b = K * (1.0 - a)
+    else:
+        a = 0.0
+        b = K
+
     total = (n - 1) * m
-    out_t = np.empty(n)
     out_pv = np.empty(n)
     out_cv = np.empty(n)
-
-    a = h / T if T > 0 else 1.0
 
     for k in range(total):
         i = k // m
@@ -50,8 +65,6 @@ def _simulate(K: float, T: float, tau: float,
 
         dterm = 0.0
         if td and td > 0:
-            # Реальный дифференциатор с фильтром 1-го порядка:
-            # dfilt/dt = N*(de/dt - dfilt), de/dt = (e - e_prev)/h
             d_raw = (e - e_prev) / h
             dfilt += (h * d_filter_n) * (d_raw - dfilt)
             dterm = td * dfilt
@@ -59,26 +72,33 @@ def _simulate(K: float, T: float, tau: float,
 
         u_raw = kp * (e + integ + dterm)
 
-        # Насыщение выхода 0..100 %
-        u = min(max(u_raw, 0.0), 100.0)
+        # Насыщение выхода (опционально)
+        if cv_clip:
+            u = min(max(u_raw, cv_min), cv_max)
+        else:
+            u = u_raw
+
+        # Anti-windup (back-calculation): при насыщении возвращаем интеграл
+        # к значению, согласованному с насыщенным выходом.
+        if cv_clip and u != u_raw and kp != 0:
+            integ = (u / kp) - e - dterm
 
         # Запись в буфер задержки (кольцевой сдвиг)
         ubuf = np.roll(ubuf, -1)
         ubuf[-1] = u
         u_delayed = ubuf[0] if delay_steps < len(ubuf) else 0.0
 
-        # Объект FOPDT (метод Эйлера)
-        for _ in range(m):
-            y += a * (K * u_delayed - y)
+        # Объект FOPDT — точная дискретная модель на подшаге
+        y = a * y + b * u_delayed
 
         if k % m == 0:
             j = k // m
-            out_t[j] = time[j]
             out_pv[j] = y
             out_cv[j] = u
 
-    out_t[-1], out_pv[-1], out_cv[-1] = time[-1], y, u
-    return out_t, out_pv, out_cv
+    out_pv[-1] = y
+    out_cv[-1] = u
+    return out_pv, out_cv
 
 
 def simulate_closed_loop(K: float, T: float, tau: float, controller_type: str,
@@ -87,14 +107,18 @@ def simulate_closed_loop(K: float, T: float, tau: float, controller_type: str,
                          sp_profile: str = "step",
                          sp_array: np.ndarray | None = None,
                          sp_start: float | None = None,
-                         sp_target: float | None = None):
+                         sp_target: float | None = None,
+                         cv_clip: bool = True, cv_min: float = 0.0,
+                         cv_max: float = 100.0):
     """
     Симуляция отклика замкнутой системы.
 
     sp_profile="step" — ступенька задания величиной 10 % диапазона;
     sp_profile="array" — задание из массива данных (интерполированного);
     sp_start/sp_target — ручная ступенька задания от sp_start к sp_target
-    (приоритетнее sp_profile/sp_array). Возвращает (time, sp, pv, cv).
+    (приоритетнее sp_profile/sp_array).
+    cv_clip — ограничивать ли выход регулятора диапазоном [cv_min, cv_max].
+    Возвращает (time, sp, pv, cv).
     """
     if sp_start is not None and sp_target is not None:
         time = np.arange(0.0, sim_time + dt_sim * 0.5, dt_sim)
@@ -122,8 +146,9 @@ def simulate_closed_loop(K: float, T: float, tau: float, controller_type: str,
     # Коэффициенты настройки задаются по модулю усиления.
     kp_eff = np.sign(K) * kp
 
-    t, pv, cv = _simulate(K, T, tau, kp_eff, ti_eff, td_eff, n_filter, time, sp)
-    return t, sp, pv, cv
+    pv, cv = _simulate(K, T, tau, kp_eff, ti_eff, td_eff, n_filter, time, sp,
+                       cv_clip=cv_clip, cv_min=cv_min, cv_max=cv_max)
+    return time, sp, pv, cv
 
 
 def _saturation_metrics(cv: np.ndarray, lo: float = 0.0,

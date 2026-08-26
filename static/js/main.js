@@ -124,6 +124,7 @@ const PIDApp = (() => {
     payload.ctype = $("#ctype").val();
     payload.lambda = parseFloat($("#lambda-input").val()) || null;
     payload.use_saturation = $("#use-saturation").is(":checked");
+    payload.cv_clip = $("#use-saturation").is(":checked");
 
     // Ручная ступенька задания: приоритет — SP из поля, иначе из данных
     const spVal = $("#in-sp").val();

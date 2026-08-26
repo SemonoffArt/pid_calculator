@@ -72,10 +72,11 @@
                value="0" min="0" step="1">
       </div>
       <div class="form-check mb-2">
-        <input class="form-check-input" type="checkbox" id="use-saturation">
+        <input class="form-check-input" type="checkbox" id="use-saturation" checked>
         <label class="form-check-label" for="use-saturation">
-          Учитывать насыщение регулятора
-          <span class="text-muted small">(ограничить Kp, чтобы CV не упирался в 0–100 %)</span>
+          Учитывать насыщение регулятора (CV 0–100 %)
+          <span class="text-muted small">снять — без ограничения хода CV, как на
+            внешних калькуляторах</span>
         </label>
       </div>
       <button class="btn btn-primary w-100" id="recalc-btn">Пересчитать</button>

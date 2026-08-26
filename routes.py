@@ -216,6 +216,9 @@ def register_routes(app: Flask) -> None:
         sp_target = _num(payload.get("sp_target"))
         sp_start = _num(payload.get("sp_start"))
         use_saturation = bool(payload.get("use_saturation", False))
+        # Ограничение хода CV (0..100 %). Если выключено — без насыщения
+        # (как внешние калькуляторы), для сверки динамики.
+        cv_clip = bool(payload.get("cv_clip", True))
 
         state = get_state()
         if not state.get("K"):
@@ -279,7 +282,7 @@ def register_routes(app: Flask) -> None:
             # Используем ту же ступеньку в главной симуляции
             sp_start, sp_target = sim_start_sp, sim_target_sp
 
-        save_state(coeffs=coeffs)
+        save_state(coeffs=coeffs, cv_clip=cv_clip)
 
         sim = simulator.simulate_closed_loop(
             model.K, model.T, model.tau, ctype,
@@ -287,7 +290,8 @@ def register_routes(app: Flask) -> None:
             dt_sim=dt_sim,
             sim_time=sim_time,
             sp_array=data.sp,
-            sp_start=sp_start, sp_target=sp_target)
+            sp_start=sp_start, sp_target=sp_target,
+            cv_clip=cv_clip)
         metrics = simulator.quality_metrics(sim[0], sim[1], sim[2], sim[3])
 
         # П1: нештатные качества настройки — предупреждения для пользователя
