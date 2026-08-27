@@ -83,8 +83,10 @@ def register_routes(app: Flask) -> None:
                                                  Config.DEFAULT_FILTER_WINDOW))
         except (TypeError, ValueError):
             filter_window = Config.DEFAULT_FILTER_WINDOW
-        filter_window = max(Config.MIN_FILTER_WINDOW,
-                            min(Config.MAX_FILTER_WINDOW, filter_window))
+        # 0 — фильтрация отключена; иначе — окно в [MIN, MAX]
+        if filter_window != 0:
+            filter_window = max(Config.MIN_FILTER_WINDOW,
+                                min(Config.MAX_FILTER_WINDOW, filter_window))
 
         try:
             df = data_loader.load_csv(file)

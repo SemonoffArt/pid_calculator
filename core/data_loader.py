@@ -58,14 +58,10 @@ def load_csv(file_storage) -> pd.DataFrame:
     if not raw:
         raise DataError("Файл пустой или не читается.")
 
-    try:
-        text = raw.decode("utf-8-sig")
-    except UnicodeDecodeError:
-        try:
-            text = raw.decode("cp1251")
-        except UnicodeDecodeError:
-            raise DataError("Не удалось определить кодировку файла "
-                            "(ожидается UTF-8 или CP1251).")
+    text = _decode_text(raw)
+    if text is None:
+        raise DataError("Не удалось определить кодировку файла "
+                        "(проверены UTF-8, UTF-16, UTF-32, CP1251).")
 
     rows = _parse_rows(text, _detect_delimiter(text))
     header_idx, header = _find_header(rows)
@@ -119,6 +115,37 @@ def load_csv(file_storage) -> pd.DataFrame:
 
 
 # ------------------------------------------------------------- helpers
+
+_ENCODINGS_BY_BOM = [
+    (b"\xff\xfe\x00\x00", "utf-32"),
+    (b"\x00\x00\xfe\xff", "utf-32"),
+    (b"\xff\xfe", "utf-16"),
+    (b"\xfe\xff", "utf-16"),
+    (b"\xef\xbb\xbf", "utf-8-sig"),
+]
+
+
+def _decode_text(raw: bytes) -> str | None:
+    """
+    Определяет и снимает кодировку текстового файла.
+
+    Пытается по BOM (UTF-8/16/32), затем как UTF-8, CP1251 иначе. Возвращает
+    строку или None, если ни одна кодировка не подошла.
+    """
+    for bom, enc in _ENCODINGS_BY_BOM:
+        if raw.startswith(bom):
+            try:
+                return raw.decode(enc)
+            except UnicodeDecodeError:
+                return None
+
+    for enc in ("utf-8-sig", "utf-8", "cp1251"):
+        try:
+            return raw.decode(enc)
+        except (UnicodeDecodeError, LookupError):
+            continue
+    return None
+
 
 def _try_float(s: str) -> float | None:
     """Парсинг числа с десятичной запятой или точкой; None при неудаче."""
@@ -216,7 +243,10 @@ def _extract_ymax(rows: list[list[str]],
 
 _DT_FORMATS = ("%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M:%S,%f",
                "%d.%m.%y %H:%M:%S", "%Y-%m-%d %H:%M:%S",
-               "%Y/%m/%d %H:%M:%S", "%d/%m/%Y %H:%M:%S")
+               "%Y/%m/%d %H:%M:%S", "%d/%m/%Y %H:%M:%S",
+               # американский/межд. формат MM/DD/YYYY (после DD/MM — чтобы
+               # не ломать прежний приоритет европейского формата)
+               "%m/%d/%Y %H:%M:%S", "%m/%d/%y %H:%M:%S")
 
 
 def _parse_datetime(s: str):

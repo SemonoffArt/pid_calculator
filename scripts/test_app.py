@@ -30,12 +30,82 @@ class FS:
             return f.read()
 
 
+# --- Проверка поддержки формата SCADA с датой MM/DD/YYYY и строкой Description.
+# Имитируем файл в памяти (разделитель ',', даты вида 08/27/2026 05:55:31).
+scada_text = (
+    '"Time","TAG_PV","TAG_SP","TAG_CV"\n'
+    '"Y-max","400","400","100"\n'
+    '"Y-min","0","0","0"\n'
+    '"Description","Some PV","Some SP","Some CV"\n'
+    '08/27/2026 05:55:31,"115.0","114.8","43.8"\n'
+    '08/27/2026 05:55:32,"115.5","114.8","43.8"\n'
+    '08/27/2026 05:55:33,"116.0","114.8","43.9"\n'
+    '08/27/2026 05:55:34,"116.5","114.9","44.0"\n'
+    '08/27/2026 05:55:35,"117.0","114.9","44.1"\n'
+    '08/27/2026 05:55:36,"117.5","115.0","44.2"\n'
+    '08/27/2026 05:55:37,"118.0","115.0","44.3"\n'
+    '08/27/2026 05:55:38,"118.5","115.1","44.4"\n'
+    '08/27/2026 05:55:39,"119.0","115.1","44.5"\n'
+    '08/27/2026 05:55:40,"119.5","115.2","44.6"\n'
+)
+
+
+class FS_SCADA:
+    filename = "tst1.csv"
+
+    @staticmethod
+    def read():
+        return scada_text.encode("utf-8")
+
+
+df_scada = data_loader.load_csv(FS_SCADA())
+check("SCADA (MM/DD + Description) загружен",
+      set(("PV", "SP", "CV")).issubset(df_scada.columns))
+check("Время распознано как MM/DD/YYYY",
+      np.isfinite(df_scada["Time"]).all())
+check("Y-max из Scada извлечён", df_scada.attrs["y_max"]["pv"] == 400.0)
+check("Строка Description пропущена",
+      df_scada.shape[0] == 10 and df_scada["PV"].iloc[-1] == 119.5)
+
+# --- Проверка кодировки UTF-16 (BOM) на реальном тренде.
+import os
+trend_path = r"tmp\Trend on 2026-08-27T06.54.25.csv"
+if os.path.exists(trend_path):
+    class FS_U16:
+        filename = "trend.csv"
+
+        @staticmethod
+        def read():
+            return open(trend_path, "rb").read()
+
+    df_u16 = data_loader.load_csv(FS_U16())
+    check("UTF-16 (BOM) тренд загружен",
+          set(("PV", "SP", "CV")).issubset(df_u16.columns))
+    check("UTF-16: время линейно по шагу",
+          abs((df_u16["Time"].iloc[-1] - 0.0) - (len(df_u16) - 1)) < 1.0)
+    check("UTF-16: Y-max извлечён", df_u16.attrs["y_max"]["pv"] == 400.0)
+    print(f"  UTF-16 тренд: {len(df_u16)} строк, "
+          f"PV {df_u16['PV'].min():.1f}..{df_u16['PV'].max():.1f}")
+else:
+    print("  (пропуск UTF-16 — файл тренда отсутствует)")
+
+
+
+
 df = data_loader.load_csv(FS())
 
 check("CSV загружен", set(("PV", "SP", "CV")).issubset(df.columns))
 data = data_loader.preprocess(df, None, 5)
 check("Предобработка", abs(data.dt - 1.0) < 0.01)
 check("Ступенька найдена (CV, разомкнутый контур)", data.step_index is not None)
+
+# Окно фильтра = 0 -> без медианной фильтрации (сигнал не изменяется)
+data_raw = data_loader.load_csv(FS())
+_, raw_pv, _, raw_cv = data_loader.interpolate(data_raw, None)
+data_no_filt = data_loader.preprocess(data_raw, None, 0)
+check("Окно 0 = без фильтрации", np.array_equal(data_no_filt.pv, raw_pv))
+check("Окно 0: CV не отфильтрован",
+      np.array_equal(data_no_filt.cv, raw_cv))
 
 res = identification.identify(data, "auto")
 model = res["model"]
@@ -80,6 +150,24 @@ metrics = simulator.quality_metrics(*sim[:3])
 print(f"  Симуляция: метрики {metrics}")
 check("Симуляция сходится к заданию",
       abs(sim[2][-1] - sim[1][-1]) < 0.05 * abs(sim[1][-1]))
+
+# --- ISA-стандартный ПИД: D-составляющая (с фильтром Td/N) должна
+# подавлять перерегулирование по сравнению с чистым PI.
+k_isa, t_isa, tau_isa = 1.58, 7.57, 2.1
+_, _, pv_pid, _ = simulator.simulate_closed_loop(
+    k_isa, t_isa, tau_isa, "PID", 2.05, 7.0, 1.0,
+    dt_sim=0.05, sim_time=100, sp_start=0.0, sp_target=50.0, cv_clip=True)
+_, _, pv_pi, _ = simulator.simulate_closed_loop(
+    k_isa, t_isa, tau_isa, "PI", 2.05, 7.0, None,
+    dt_sim=0.05, sim_time=100, sp_start=0.0, sp_target=50.0, cv_clip=True)
+ov_pid = simulator.quality_metrics(
+    np.arange(0, 100 + 0.05 / 2, 0.05), np.full(len(pv_pid), 50.0),
+    pv_pid)["overshoot"]
+ov_pi = simulator.quality_metrics(
+    np.arange(0, 100 + 0.05 / 2, 0.05), np.full(len(pv_pi), 50.0),
+    pv_pi)["overshoot"]
+check("ISA-ПИД: D-составляющая снижает перерегулирование", ov_pid < ov_pi)
+print(f"  ISA-ПИД: OV PID={ov_pid:.1f}% vs PI={ov_pi:.1f}%")
 
 # --- Проверка соответствия внешнему референсу (ЗН, PI, K=1.58/T=7.57/tau=2.1,
 # ступенька SP 0->50): подтверждает корректность дискретизации и anti-windup.
