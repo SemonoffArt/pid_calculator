@@ -272,25 +272,54 @@ def _map_columns(header: list[str]) -> tuple[int, int, int, int] | None:
     """
     Сопоставляет колонки: возвращает (time_idx, pv_idx, sp_idx, cv_idx).
 
-    Сначала ищутся узнаваемые имена (Time/PV/SP/CV и алиасы);
-    если их нет и колонок данных ровно три — сопоставление по порядку.
+    Порядок обнаружения:
+    1) По суффиксам имён: колонка, оканчивающаяся на "SPM" — это CV;
+       оканчивающаяся на "SPA" — это SP. Если присутствуют обе, то
+       оставшаяся колонка данных (не Time) — это PV. Это позволяет колонкам
+       после Time идти в произвольном порядке.
+    2) По узнаваемым именам/алиасам (Time/PV/SP/CV и алиасы).
+    3) Позиционное сопоставление: время, затем PV, SP, CV.
     """
     upper = [c.upper().strip() for c in header]
 
-    def find(name_set: set[str], start: int = 1) -> int | None:
+    def find_exact(name_set: set[str], start: int = 1) -> int | None:
         for i in range(start, len(upper)):
             if upper[i] in name_set:
                 return i
         return None
 
-    t_idx = find({"TIME", "ВРЕМЯ", "DATE", "DATETIME"}, start=0)
-    pv_idx, sp_idx, cv_idx = find(_ALIASES["PV"]), \
-        find(_ALIASES["SP"]), find(_ALIASES["CV"])
+    t_idx = find_exact({"TIME", "ВРЕМЯ", "DATE", "DATETIME"}, start=0)
 
+    # 1) Суффиксы SPM (CV) / SPA (SP) — SCADA-экспорт с произвольным порядком
+    def find_suffix(suffix: str) -> int | None:
+        for i in range(len(upper)):
+            if upper[i].endswith(suffix):
+                return i
+        return None
+
+    sp_idx_suf = find_suffix("SPA")
+    cv_idx_suf = find_suffix("SPM")
+    if sp_idx_suf is not None and cv_idx_suf is not None:
+        # PV — единственная оставшаяся колонка данных (исключая Time/SP/CV)
+        pv_suf = None
+        for i in range(len(upper)):
+            if not header[i].strip():
+                continue
+            if i in (t_idx, sp_idx_suf, cv_idx_suf):
+                continue
+            pv_suf = i
+            break
+        if pv_suf is not None:
+            return (t_idx if t_idx is not None else 0,
+                    pv_suf, sp_idx_suf, cv_idx_suf)
+
+    # 2) Узнаваемые имена и алиасы
+    pv_idx, sp_idx, cv_idx = find_exact(_ALIASES["PV"]), \
+        find_exact(_ALIASES["SP"]), find_exact(_ALIASES["CV"])
     if t_idx is not None and None not in (pv_idx, sp_idx, cv_idx):
         return t_idx, pv_idx, sp_idx, cv_idx
 
-    # Позиционное сопоставление: колонка 0 — время, затем PV, SP, CV
+    # 3) Позиционное сопоставление: колонка 0 — время, затем PV, SP, CV
     data_cols = [i for i in range(len(header)) if header[i].strip()]
     if len(data_cols) >= 4 and (t_idx is None or t_idx == 0):
         return 0, 1, 2, 3
