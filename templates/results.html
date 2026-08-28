@@ -20,20 +20,36 @@
         {% endif %}
       </h5>
       <table class="table table-sm table-striped">
-        <tr><th>K (усиление)</th>
+        <tr><th>K (усиление)
+            <span class="help-q" data-bs-toggle="tooltip"
+              data-bs-title="Коэффициент усиления объекта. Насколько изменится PV (в единицах измерения) при изменении выхода регулятора CV на 1 %. Определяется как отношение установившихся изменений ΔPV/ΔCV. Отрицательный K означает обратное действие: увеличение CV уменьшает PV (например, клапан охлаждения). Знак учитывается автоматически.">?</span></th>
             <td id="model-K">{{ "%.4f"|format(state.K or 0) }}
               {% if state.K and state.K < 0 %}
                 <span class="badge text-bg-info">обратное действие</span>
               {% endif %}
             </td></tr>
-        <tr><th>T (пост. времени), с</th><td id="model-T">{{ "%.2f"|format(state.T or 0) }}</td></tr>
-        <tr><th>τ (запаздывание), с</th><td id="model-tau">{{ "%.2f"|format(state.tau or 0) }}</td></tr>
-        <tr><th>Ku / Tu</th>
+        <tr><th>T (пост. времени), с
+            <span class="help-q" data-bs-toggle="tooltip"
+              data-bs-title="Постоянная времени объекта. Время, за которое выход достигает 63,2 % от установившегося изменения после прохождения запаздывания. Характеризует инерционность: чем больше T, тем медленнее реагирует процесс.">?</span></th>
+            <td id="model-T">{{ "%.2f"|format(state.T or 0) }}</td></tr>
+        <tr><th>τ (запаздывание), с
+            <span class="help-q" data-bs-toggle="tooltip"
+              data-bs-title="Чистое запаздывание. Время от изменения входа до начала реакции выхода (транспорт вещества, гидравлика, дискретность измерений). Чем больше отношение τ/T, тем труднее объект и тем осторожнее нужно выбирать Kp.">?</span></th>
+            <td id="model-tau">{{ "%.2f"|format(state.tau or 0) }}</td></tr>
+        <tr><th>Ku / Tu
+            <span class="help-q" data-bs-toggle="tooltip"
+              data-bs-title="Критические параметры замкнутого контура (метод Зиглера–Николса по замкнутому контуру). Ku — усиление P-регулятора на границе устойчивости (незатухающие колебания); Tu — период этих автоколебаний. Рассчитываются из сдвига фазы −180° или релейным методом: Ku = 4·d/(π·a).">?</span></th>
             <td>{% if state.Ku %}{{ "%.2f / %.2f"|format(state.Ku, state.Tu) }}{% else %}—{% endif %}</td></tr>
         {% if state.fit_quality == state.fit_quality and state.fit_quality is not none %}
-        <tr><th>R² аппроксимации</th><td>{{ "%.3f"|format(state.fit_quality) }}</td></tr>
+        <tr><th>R² аппроксимации
+            <span class="help-q" data-bs-toggle="tooltip"
+              data-bs-title="Качество аппроксимации моделью. Доля объяснённой дисперсии данных (0…1). Выше 0,9 — отлично; ниже 0,5 — ориентировочно (слабое возбуждение CV, шум PV или возмущения). Для точной настройки нужен тест со ступенчатым изменением CV в ручном режиме.">?</span></th>
+            <td>{{ "%.3f"|format(state.fit_quality) }}</td></tr>
         {% endif %}
-        <tr><th>Управляемость</th><td id="model-ctrl">—</td></tr>
+        <tr><th>Управляемость
+            <span class="help-q" data-bs-toggle="tooltip"
+              data-bs-title="Оценка, насколько легко объект регулируется классическими методами. Главный показатель — τ/T: меньше 0,2 — хорошо управляемый; 0,2…0,6 — умеренно трудный; больше 0,6 — трудный. Дополнительно отмечается низкая чувствительность (малый |K|) — Kp получается большим.">?</span></th>
+            <td id="model-ctrl">—</td></tr>
         <tr id="model-ctrl-hint-row" style="display:none;">
           <td colspan="2" id="model-ctrl-hint" class="text-muted small"></td>
         </tr>
@@ -47,7 +63,9 @@
     <div class="card shadow-sm p-3 mb-3">
       <h5 class="mb-3">Настройка регулятора</h5>
       <div class="mb-2">
-        <label for="method" class="form-label">Метод настройки</label>
+        <label for="method" class="form-label">Метод настройки
+          <span class="help-q" data-bs-toggle="tooltip"
+            data-bs-title="Способ вычисления коэффициентов Kp/Ti/Td по модели объекта (FOPDT: K, T, τ). Доступно 9 канонических методов: Зиглер–Николс, Cohen–Coon, CHR (4 варианта), IMC, SIMC, AMIGO, а также оптимизация ITAE. Подробные формулы — в справке ниже.">?</span></label>
         <select class="form-select" id="method">
           <optgroup label="Зиглер–Николс">
             <option value="zn_open">З–Н, разомкнутый контур</option>
@@ -71,7 +89,9 @@
         </select>
       </div>
       <div class="mb-2">
-        <label for="ctype" class="form-label">Тип регулятора</label>
+        <label for="ctype" class="form-label">Тип регулятора
+          <span class="help-q" data-bs-toggle="tooltip"
+            data-bs-title="P — только пропорциональная составляющая (остаётся статическая ошибка); PI — плюс интегральная (устраняет стат. ошибку, стандарт для потоков/давления); PID — плюс дифференциальная (ускоряет реакцию для инерционных объектов, температура).">?</span></label>
         <select class="form-select" id="ctype">
           <option value="P">P</option>
           <option value="PI">PI</option>
@@ -80,12 +100,16 @@
       </div>
       <div class="mb-2" id="lambda-group" style="display:none;">
         <label for="lambda-input" class="form-label">λ для IMC, с
+          <span class="help-q" data-bs-toggle="tooltip"
+            data-bs-title="Желаемая постоянная времени замкнутой системы λ (метод IMC). Задаёт компромисс скорость/робастность: малое λ — быстро, но менее устойчиво к ошибкам модели; большое λ — плавно, но медленно. По умолчанию λ = max(T, τ).">?</span>
           <span class="text-muted">(0 — авто)</span></label>
         <input type="number" class="form-control" id="lambda-input"
                value="0" min="0" step="1">
       </div>
       <div class="mb-2" id="tau_c-group" style="display:none;">
         <label for="tau_c-input" class="form-label">τc для SIMC, с
+          <span class="help-q" data-bs-toggle="tooltip"
+            data-bs-title="Желаемая постоянная времени замкнутого контура τc (метод SIMC). Рекомендуемый τc = τ (запаздывание) — баланс скорости и робастности. По умолчанию τc = τ.">?</span>
           <span class="text-muted">(0 — авто = τ)</span></label>
         <input type="number" class="form-control" id="tau_c-input"
                value="0" min="0" step="1">
@@ -94,6 +118,8 @@
         <input class="form-check-input" type="checkbox" id="use-saturation" checked>
         <label class="form-check-label" for="use-saturation">
           Учитывать насыщение регулятора (CV 0–100 %)
+          <span class="help-q" data-bs-toggle="tooltip"
+            data-bs-title="Ограничивает ход CV диапазоном 0–100 % (как реальный клапан). Снять — симуляция без насыщения CV, как на внешних калькуляторах (для сверки динамики). При насыщении Kp автоматически снижается (П3).">?</span>
           <span class="text-muted small">снять — без ограничения хода CV, как на
             внешних калькуляторах</span>
         </label>
@@ -106,23 +132,31 @@
     <div class="card shadow-sm p-3 mb-3">
       <h5 class="mb-3">Коэффициенты и задание</h5>
       <div class="mb-2">
-        <label for="in-kp" class="form-label">Kp (усиление)</label>
+        <label for="in-kp" class="form-label">Kp (усиление)
+          <span class="help-q" data-bs-toggle="tooltip"
+            data-bs-title="Пропорциональный коэффициент регулятора. Умножается на ошибку e = SP − PV. Чем больше Kp, тем резче реакция, но выше риск перерегулирования и ухода в насыщение. Составляющая типов P, PI и PID.">?</span></label>
         <input type="number" step="any" class="form-control" id="in-kp"
                value="{{ '%.6g'|format(state.coeffs.Kp) if state.coeffs else '' }}"
                required>
       </div>
       <div class="mb-2">
-        <label for="in-ti" class="form-label">Ti (интегрирование), с</label>
+        <label for="in-ti" class="form-label">Ti (интегрирование), с
+          <span class="help-q" data-bs-toggle="tooltip"
+            data-bs-title="Время интегрирования. Интегральная составляющая (типы PI, PID) устраняет статическую ошибку, накапливая ошибку во времени. Чем меньше Ti, тем агрессивнее интегрирование.">?</span></label>
         <input type="number" step="any" class="form-control" id="in-ti"
                value="{{ '%.6g'|format(state.coeffs.Ti) if state.coeffs and state.coeffs.Ti else '' }}">
       </div>
       <div class="mb-2">
-        <label for="in-td" class="form-label">Td (дифференцирование), с</label>
+        <label for="in-td" class="form-label">Td (дифференцирование), с
+          <span class="help-q" data-bs-toggle="tooltip"
+            data-bs-title="Время дифференцирования. Дифференциальная составляющая (тип PID) реагирует на скорость изменения ошибки, опережая её. Фильтруется по ISA: производная через звено с постоянной Td/N (N = 10), чтобы не усиливать шум.">?</span></label>
         <input type="number" step="any" class="form-control" id="in-td"
                value="{{ '%.6g'|format(state.coeffs.Td) if state.coeffs and state.coeffs.Td else '' }}">
       </div>
       <div class="mb-2">
-        <label for="in-sp" class="form-label">SP (задание), ед. PV</label>
+        <label for="in-sp" class="form-label">SP (задание), ед. PV
+          <span class="help-q" data-bs-toggle="tooltip"
+            data-bs-title="Задание (уставка) — целевое значение PV, к которому стремится контур. Пустое поле — используется профиль SP из загруженных данных.">?</span></label>
         <input type="number" step="any" class="form-control" id="in-sp"
                placeholder="напр., {{ '%.3g'|format(state.pv_span[1]) if state.pv_span and state.pv_span[1] is not none else '2.0' }}">
         <div class="form-text">Целевое значение задания. Пусто — используется

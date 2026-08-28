@@ -168,6 +168,14 @@ const PIDApp = (() => {
     $("#recalc-btn").on("click", () => recalculate());
     $("#run-sim-btn").on("click", () => recalculate(collectManual()));
 
+    // Подсказки-вопросики у полей (делегирование — работает для всех карточек)
+    if (window.bootstrap && window.bootstrap.Tooltip) {
+      new bootstrap.Tooltip(document.body, {
+        selector: '[data-bs-toggle="tooltip"]',
+        html: false,
+      });
+    }
+
     // Страница корректировки: отправляем ручные значения и переходим к графикам
     $("#adjust-form").on("submit", (e) => {
       e.preventDefault();
