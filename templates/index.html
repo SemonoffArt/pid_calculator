@@ -5,8 +5,7 @@
 <div class="row justify-content-center">
   <div class="col-lg-8">
     <h1 class="mb-3">Настройка ПИД-регулятора по данным процесса</h1>
-    <p class="lead">Загрузите CSV-файл с данными технологического процесса
-      (разделитель <code>;</code>, десятичная запятая).</p>
+    <!-- <p class="lead">Загрузите CSV-файл с данными технологического процесса.</p> -->
 
     <form method="post" action="{{ url_for('upload') }}" enctype="multipart/form-data"
           class="card p-4 shadow-sm" id="upload-form">
@@ -91,10 +90,10 @@
       <button type="submit" class="btn btn-primary btn-lg">Загрузить и рассчитать</button>
     </form>
 
-    <div class="mt-3 text-muted small">
+    <!-- <div class="mt-3 text-muted small">
       Пример структуры файла: колонки <code>Time;SP;PV;CV</code>,
       значения вида <code>0,0;50,0;50,2;30,1</code>.
-    </div>
+    </div> -->
 
     {% include "_reference_upload.html" %}
   </div>
