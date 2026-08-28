@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import io
 
+import os
+
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -14,12 +16,36 @@ from flask import session  # noqa: F401 (state передаётся явно)
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (Image, PageBreak, Paragraph, SimpleDocTemplate,
                                 Spacer, Table, TableStyle)
 
 from core import pid_tuning, simulator
 
 RU_TITLE = "Отчёт по настройке ПИД-регулятора"
+
+# Шрифт с поддержкой кириллицы (DejaVuSans поставляется с matplotlib).
+# Встроенные шрифты reportlab (Helvetica и т.п.) не содержат глифов
+# кириллицы — при экспорте русские буквы выводились бы как «чёрные
+# прямоугольники».
+_FONTS_REGISTERED = False
+
+
+def _register_fonts() -> None:
+    global _FONTS_REGISTERED
+    if _FONTS_REGISTERED:
+        return
+    fdir = os.path.join(matplotlib.get_data_path(), "fonts", "ttf")
+    pdfmetrics.registerFont(
+        TTFont("DejaVuSans", os.path.join(fdir, "DejaVuSans.ttf")))
+    pdfmetrics.registerFont(
+        TTFont("DejaVuSans-Bold", os.path.join(fdir, "DejaVuSans-Bold.ttf")))
+    # Соответствие «жирного» в тегах <b>…
+    from reportlab.lib.fonts import addMapping
+    addMapping("DejaVuSans", 0, 0, "DejaVuSans")
+    addMapping("DejaVuSans", 1, 0, "DejaVuSans-Bold")
+    _FONTS_REGISTERED = True
 
 METHOD_NAMES = {
     "zn_open": "Зиглер–Николс (разомкнутый контур)",
@@ -95,9 +121,12 @@ def build_pdf(state: dict, data) -> io.BytesIO:
                             leftMargin=2 * cm, rightMargin=2 * cm,
                             topMargin=2 * cm, bottomMargin=2 * cm)
 
+    _register_fonts()
     styles = getSampleStyleSheet()
+    styles["Normal"].fontName = "DejaVuSans"
+    styles["Heading2"].fontName = "DejaVuSans-Bold"
     title_style = ParagraphStyle("RuTitle", parent=styles["Title"],
-                                 fontName="Helvetica-Bold")
+                                 fontName="DejaVuSans-Bold")
 
     story = [
         Paragraph(RU_TITLE, title_style),
@@ -121,6 +150,7 @@ def build_pdf(state: dict, data) -> io.BytesIO:
     mt.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), "#e8e8f5"),
         ("GRID", (0, 0), (-1, -1), 0.5, "#999"),
+        ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
         ("FONTSIZE", (0, 0), (-1, -1), 9),
         ("TOPPADDING", (0, 0), (-1, -1), 3),
     ]))
@@ -142,6 +172,7 @@ def build_pdf(state: dict, data) -> io.BytesIO:
     ct.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), "#e8f5e8"),
         ("GRID", (0, 0), (-1, -1), 0.5, "#999"),
+        ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
         ("FONTSIZE", (0, 0), (-1, -1), 9),
         ("TOPPADDING", (0, 0), (-1, -1), 3),
     ]))
