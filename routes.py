@@ -219,9 +219,18 @@ def register_routes(app: Flask) -> None:
         sp_target = _num(payload.get("sp_target"))
         sp_start = _num(payload.get("sp_start"))
         use_saturation = bool(payload.get("use_saturation", False))
-        # Ограничение хода CV (0..100 %). Если выключено — без насыщения
-        # (как внешние калькуляторы), для сверки динамики.
-        cv_clip = bool(payload.get("cv_clip", True))
+        # Время симуляции из карточки «Параметры симуляции» (иначе — авто)
+        sim_time_inp = _num(payload.get("sim_time"))
+        # Симметричный предел хода CV. Если задан — CV ограничивается
+        # снизу 0 %, сверху — заданным значением; иначе сохраняется прежнее
+        # поведение (cv_clip + диапазон 0..100 %).
+        cv_limit = _num(payload.get("cv_limit"))
+        if cv_limit is not None and cv_limit > 0:
+            cv_clip = True
+            cv_min, cv_max = 0.0, cv_limit
+        else:
+            cv_clip = bool(payload.get("cv_clip", True))
+            cv_min, cv_max = 0.0, 100.0
 
         state = get_state()
         if not state.get("K"):
@@ -254,9 +263,11 @@ def register_routes(app: Flask) -> None:
                    sp_target=sp_target, sp_start=sp_start)
 
         # Время симуляции: покрывает профиль задания из данных
-        # плюс запас на переходный процесс
+        # плюс запас на переходный процесс; либо из карточки параметров
         data_span = float(data.time[-1] - data.time[0])
         sim_time = min(max(2.0 * data_span, 60.0), 3600.0)
+        if sim_time_inp is not None and sim_time_inp > 0:
+            sim_time = sim_time_inp
 
         # Если задана только цель SP — стартуем из начальной рабочей точки
         # (первое значение задания из данных)
@@ -295,8 +306,9 @@ def register_routes(app: Flask) -> None:
             sim_time=sim_time,
             sp_array=data.sp,
             sp_start=sp_start, sp_target=sp_target,
-            cv_clip=cv_clip)
-        metrics = simulator.quality_metrics(sim[0], sim[1], sim[2], sim[3])
+            cv_clip=cv_clip, cv_min=cv_min, cv_max=cv_max)
+        metrics = simulator.quality_metrics(sim[0], sim[1], sim[2], sim[3],
+                                            cv_min=cv_min, cv_max=cv_max)
 
         # П1: нештатные качества настройки — предупреждения для пользователя
         quality_warnings: list[str] = []

@@ -172,20 +172,22 @@ def _saturation_metrics(cv: np.ndarray, lo: float = 0.0,
 
 
 def quality_metrics(time: np.ndarray, sp: np.ndarray, pv: np.ndarray,
-                    cv: np.ndarray | None = None) -> dict:
+                    cv: np.ndarray | None = None,
+                    cv_min: float = 0.0, cv_max: float = 100.0) -> dict:
     """Показатели качества переходного процесса.
 
-    cv (опционально, 0..100 %) — если передан, дополнительно вычисляются
-    доля времени насыщения регулятора и максимальный ход CV.
+    cv (опционально) — если передан, дополнительно вычисляются доля времени
+    насыщения регулятора и максимальный ход CV. Диапазон CV задаётся
+    cv_min..cv_max (по умолчанию 0..100 %).
     """
     target = sp[-1]
     start = pv[0]
     delta = target - start
     if abs(delta) < 1e-12:
         base = {"overshoot": 0.0, "settling_time": 0.0, "iae": 0.0}
-        sat_frac, cv_max = _saturation_metrics(cv)
+        sat_frac, cv_max_v = _saturation_metrics(cv, cv_min, cv_max)
         base["sat_frac"] = round(sat_frac, 4)
-        base["cv_max"] = round(cv_max, 2)
+        base["cv_max"] = round(cv_max_v, 2)
         return base
 
     peak = float(np.max((pv - start) / delta)) if delta > 0 else \
@@ -203,9 +205,9 @@ def quality_metrics(time: np.ndarray, sp: np.ndarray, pv: np.ndarray,
         settling = float("nan")  # процесс не установился
 
     iae = float(np.trapezoid(np.abs(sp - pv), time))
-    sat_frac, cv_max = _saturation_metrics(cv)
+    sat_frac, cv_max_v = _saturation_metrics(cv, cv_min, cv_max)
     return {"overshoot": round(float(overshoot), 2),
             "settling_time": round(float(settling), 3),
             "iae": round(iae, 4),
             "sat_frac": round(sat_frac, 4),
-            "cv_max": round(cv_max, 2)}
+            "cv_max": round(cv_max_v, 2)}

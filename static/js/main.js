@@ -155,10 +155,17 @@ const PIDApp = (() => {
     payload.lambda = parseFloat($("#lambda-input").val()) || null;
     payload.tau_c = parseFloat($("#tau_c-input").val()) || null;
     payload.use_saturation = $("#use-saturation").is(":checked");
-    payload.cv_clip = $("#use-saturation").is(":checked");
+    // Диапазон хода CV из карточки «Параметры симуляции»
+    const cvLimit = parseFloat($("#cv-limit").val());
+    payload.cv_limit = cvLimit > 0 ? cvLimit : null;
+    payload.cv_clip = true;
 
-    // Ручная ступенька задания: приоритет — SP из поля, иначе из данных
-    const spVal = $("#in-sp").val();
+    // Параметры симуляции переходного процесса
+    const simTime = parseFloat($("#sim-time").val());
+    payload.sim_time = simTime > 0 ? simTime : null;
+
+    // Уставка (SP): приоритет — из карточки параметров, иначе из данных
+    const spVal = $("#sim-sp").val();
     payload.sp_target = spVal !== "" && spVal !== null
       ? parseFloat(spVal) : null;
     payload.sp_start = null;
