@@ -221,30 +221,6 @@ const PIDApp = (() => {
     }
     updateMethodTip();
 
-    // Страница корректировки: отправляем ручные значения и переходим к графикам
-    $("#adjust-form").on("submit", (e) => {
-      e.preventDefault();
-      const manual = {
-        manual: {
-          Kp: parseFloat($("#kp").val()),
-          Ti: parseFloat($("#ti").val()) || null,
-          Td: parseFloat($("#td").val()) || null,
-        },
-      };
-      sessionStorage.setItem("pid_manual", JSON.stringify({
-        Kp: manual.manual.Kp, Ti: manual.manual.Ti, Td: manual.manual.Td,
-      }));
-      window.location.href = "/results";
-    });
-
-    // Возврат на страницу результатов после корректировки
-    if (window.PAGE === "results") {
-      const saved = sessionStorage.getItem("pid_manual");
-      if (saved) {
-        sessionStorage.removeItem("pid_manual");
-        recalculate({ manual: JSON.parse(saved) });
-      }
-    }
   });
 
   return { recalculate };

@@ -345,16 +345,6 @@ def register_routes(app: Flask) -> None:
         }
         return jsonify(_finite(response))
 
-    @app.route("/adjust")
-    def adjust_page():
-        """Страница ручной корректировки коэффициентов."""
-        state = get_state()
-        if not state.get("coeffs"):
-            flash("Нет рассчитанных коэффициентов.", "warning")
-            return redirect(url_for("results_page"))
-        return render_template("adjust.html", coeffs=state["coeffs"],
-                               ctype=state.get("ctype", "PID"))
-
     @app.route("/api/reidentify", methods=["POST"])
     def api_reidentify():
         """Повторная идентификация выбранным методом (AJAX)."""

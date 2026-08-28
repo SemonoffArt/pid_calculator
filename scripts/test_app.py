@@ -354,9 +354,6 @@ print(f"  ЗН Kp={jzn['coeffs']['Kp']:.2f} (ov={jzn['metrics']['overshoot']:.0f
       f" -> с флагом Kp={jsat['coeffs']['Kp']:.2f} "
       f"(ov={jsat['metrics']['overshoot']:.0f}%)")
 
-r = client.get("/adjust")
-check("GET /adjust = 200", r.status_code == 200)
-
 r = client.get("/export/pdf")
 check("PDF экспорт", r.status_code == 200 and r.data[:4] == b"%PDF")
 print(f"  PDF размер: {len(r.data)} байт")
