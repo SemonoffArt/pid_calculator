@@ -39,11 +39,6 @@
               data-bs-title="Чистое запаздывание. Время от изменения входа до начала реакции выхода (транспорт вещества, гидравлика, дискретность измерений). Чем больше отношение τ/T, тем труднее объект и тем осторожнее нужно выбирать Kp. Можно отредактировать вручную.">?</span></th>
             <td><input type="number" step="any" class="form-control form-control-sm"
                        id="model-tau" value="{{ '%.4g'|format(state.tau or 0) }}"></td></tr>
-        <tr><td colspan="2">
-          <button class="btn btn-outline-primary btn-sm w-100" id="apply-model-btn">Применить параметры модели</button>
-          <div class="form-text">Применяет отредактированные K, T, τ — пересчитывает
-            коэффициенты и симуляцию. <span id="model-edit-msg" class="text-danger"></span></div>
-        </td></tr>
         <tr><th>Ku / Tu
             <span class="help-q" data-bs-toggle="tooltip"
               data-bs-title="Критические параметры замкнутого контура (метод Зиглера–Николса по замкнутому контуру). Ku — усиление P-регулятора на границе устойчивости (незатухающие колебания); Tu — период этих автоколебаний. Рассчитываются из сдвига фазы −180° или релейным методом: Ku = 4·d/(π·a).">?</span></th>
@@ -160,9 +155,6 @@
                value="{{ '%.6g'|format(state.coeffs.Td) if state.coeffs and state.coeffs.Td else '' }}">
       </div>
       <div id="metrics-box" class="small text-muted mb-2"></div>
-      <div class="d-grid">
-        <button class="btn btn-outline-secondary w-100" id="recalc-btn">Пересчитать по методу</button>
-      </div>
       <div class="spinner-border text-primary mt-3 d-none mx-auto" id="spinner"
            role="status"><span class="visually-hidden">Загрузка…</span></div>
     </div>
