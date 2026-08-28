@@ -29,7 +29,6 @@ def create_app(config_class: type[Config] = Config) -> Flask:
         "%(asctime)s %(levelname)s %(name)s %(message)s"))
     app.logger.addHandler(handler)
     app.logger.setLevel(logging.INFO)
-    app.config["VERSION"] = "1.3"
     app.logger.info("Приложение запущено, версия %s, лог: %s",
                     app.config["VERSION"], log_path)
 
