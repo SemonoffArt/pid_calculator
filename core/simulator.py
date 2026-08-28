@@ -34,8 +34,9 @@ def _simulate(K: float, T: float, tau: float,
 
     pv0/cv0 — начальная рабочая точка: стартовое значение PV и хода CV
     (буфер запаздывания заполняется cv0, чтобы объект не «проседал» в первую
-    секунду из-за нулевого начального управления). По умолчанию PV = SP[0],
-    CV = 0 (идеализированный старт из равновесия).
+    секунду из-за нулевого начального управления). Если cv0 не задана,
+    по умолчанию берётся равновесное значение sp[0]/K (старт без «провала»);
+    если pv0 не задано — PV = SP[0].
     """
     n = len(time)
     dt = time[1] - time[0]
@@ -43,17 +44,24 @@ def _simulate(K: float, T: float, tau: float,
     h = dt / m
     delay_steps = max(0, int(round(tau / h)))
 
+    y = pv0 if pv0 is not None else sp[0]   # начальное PV
+    # Если начальная рабочая точка не задана — стартуем из равновесия:
+    # CV = sp[0]/K удерживает PV на начальном задании без «проседания».
+    # При sp[0] = 0 cv0 = 0 (совпадает с прежним поведением).
+    if cv0 is None and K != 0:
+        cv0 = float(sp[0]) / float(K)
+    elif cv0 is None:
+        cv0 = 0.0
+
     # Буфер задержки управляющего воздействия (кольцевой массив)
     buf_len = max(delay_steps + m + 2, m + 2)
     ubuf = np.zeros(buf_len)
-    if cv0 is not None:
-        ubuf.fill(cv0)
+    ubuf.fill(cv0)
 
-    y = pv0 if pv0 is not None else sp[0]   # начальное PV
     integ = 0.0                             # интеграл ошибки
     e_prev = sp[0] - y                      # предыдущая ошибка
     dfilt = 0.0                             # состояние D-фильтра
-    if cv0 is not None and kp != 0:
+    if kp != 0:
         # Начинаем из равновесия: CV = Kp*(e + integ) при e=0 → integ = cv0/Kp
         integ = cv0 / kp
 
@@ -144,7 +152,11 @@ def simulate_closed_loop(K: float, T: float, tau: float, controller_type: str,
     if sp_start is not None and sp_target is not None:
         time = np.arange(0.0, sim_time + dt_sim * 0.5, dt_sim)
         sp = np.full(len(time), float(sp_start))
-        step_at = int(min(0.1 * len(time), len(time) - 2))
+        # Ступенька задания подаётся в момент T + τ (постоянная времени +
+        # запаздывание объекта): к этому моменту процесс успевает выйти на
+        # установившийся режим от начальной рабочей точки.
+        step_time = max(T + tau, dt_sim)
+        step_at = int(min(round(step_time / dt_sim), len(time) - 2))
         sp[step_at:] = float(sp_target)
     elif sp_profile == "array" and sp_array is not None and len(sp_array) > 1:
         src_t = np.linspace(0.0, sim_time, len(sp_array))
