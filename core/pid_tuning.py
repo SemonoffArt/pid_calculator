@@ -9,7 +9,10 @@ from __future__ import annotations
 from config import Config
 from core.identification import FopdtModel
 
-METHODS = ("zn_open", "zn_closed", "chr_0", "chr_20", "imc", "itae")
+# 9 канонических методов + оптимизация ITAE
+METHODS = ("zn_open", "zn_closed", "cohen",
+           "chr_sp0", "chr_sp20", "chr_ds0", "chr_ds20",
+           "imc", "simc", "amigo", "itae")
 
 CONTROLLER_TYPES = ("P", "PI", "PID")
 
@@ -26,6 +29,7 @@ def _apply_type(kp: float, ti: float, td: float, ctype: str) -> dict:
 def zn_open_loop(model: FopdtModel, ctype: str) -> dict:
     """Зиглер–Николс по параметрам разомкнутого контура (K, T, tau).
 
+    Канонические формулы (quarter-decay ratio ≈ 25 % перерегулирования).
     Формулы используют модуль усиления; знак K (прямое/обратное действие)
     учитывается при симуляции.
     """
@@ -33,7 +37,7 @@ def zn_open_loop(model: FopdtModel, ctype: str) -> dict:
     if tau <= 0:
         raise ValueError("Метод Зиглера–Николса требует положительного tau.")
     if ctype == "P":
-        kp = 1.2 * T / (K * tau)
+        kp = 1.0 * T / (K * tau)
         return _apply_type(kp, None, None, ctype)
     if ctype == "PI":
         kp = 0.9 * T / (K * tau)
@@ -54,23 +58,64 @@ def zn_closed_loop(ku: float, tu: float, ctype: str) -> dict:
     return _apply_type(0.6 * ku, tu / 2.0, tu / 8.0, ctype)
 
 
-def chr(model: FopdtModel, ctype: str, overshoot: str) -> dict:
+def cohen(model: FopdtModel, ctype: str) -> dict:
     """
-    Чен–Хрон (CHR) для отработки изменения задания.
+    Cohen–Coon (1953) для FOPDT с большим запаздыванием.
 
-    overshoot: "0" — без перерегулирования, "20" — быстрое затухание (20 %).
-    Коэффициенты умножаются на T/(K*tau); Ti, Td — в секундах.
+    r = τ/T. Коэффициенты умножаются на T/(K·τ); Ti, Td — в секундах.
+    Чувствителен к соотношению r, лучше Z-N для L/T > 0,3.
     """
+    K, T, tau = abs(model.K), model.T, model.tau
+    if tau <= 0:
+        raise ValueError("Метод Cohen–Coon требует положительного tau.")
+    r = tau / T
+    base = T / (K * tau)            # = 1/(K·r)
+    if ctype == "P":
+        kp = base * (1.0 + r / 3.0)
+        return _apply_type(kp, None, None, ctype)
+    if ctype == "PI":
+        kp = base * (0.9 + r / 12.0)
+        ti = tau * (30.0 + 3.0 * r) / (9.0 + 20.0 * r)
+        return _apply_type(kp, ti, None, ctype)
+    kp = base * (4.0 / 3.0 + r / 4.0)
+    ti = tau * (32.0 + 6.0 * r) / (13.0 + 8.0 * r)
+    td = tau * 4.0 / (11.0 + 2.0 * r)
+    return _apply_type(kp, ti, td, ctype)
+
+
+def chr(model: FopdtModel, ctype: str, variant: str) -> dict:
+    """
+    Чен–Хрон (CHR, 1952) — четыре варианта:
+
+    variant: "sp0" — отработка уставки, без перерегулирования;
+             "sp20" — отработка уставки, ~20 % перерегулирования;
+             "ds0" — подавление возмущений, без перерегулирования;
+             "ds20" — подавление возмущений, ~20 % перерегулирования.
+
+    Коэффициенты умножаются на T/(K·τ); Ti, Td — в секундах.
+    """
+    if variant not in ("sp0", "sp20", "ds0", "ds20"):
+        raise ValueError(f"Неизвестный вариант CHR: {variant}")
     base = model.T / (abs(model.K) * model.tau)
-    if overshoot == "0":
-        table = {"P": (0.3, None, None),
-                 "PI": (0.35, 1.2 * model.T, None),
-                 "PID": (0.6, model.T, 0.5 * model.tau)}
-    else:
-        table = {"P": (0.7, None, None),
-                 "PI": (0.7, 2.3 * model.tau, None),
-                 "PID": (0.95, 2.4 * model.tau, 0.42 * model.tau)}
-    kp_c, ti_c, td_c = table[ctype]
+    tables = {
+        "sp0": {  # servo, 0 % OS
+            "P": (0.3, None, None),
+            "PI": (0.35, 1.2 * model.T, None),
+            "PID": (0.6, model.T, 0.5 * model.tau)},
+        "sp20": {  # servo, 20 % OS
+            "P": (0.7, None, None),
+            "PI": (0.6, 1.0 * model.T, None),
+            "PID": (0.95, 1.4 * model.T, 0.47 * model.tau)},
+        "ds0": {  # regulator, 0 % OS
+            "P": (0.3, None, None),
+            "PI": (0.7, 2.3 * model.tau, None),
+            "PID": (0.95, 2.4 * model.tau, 0.42 * model.tau)},
+        "ds20": {  # regulator, 20 % OS
+            "P": (0.7, None, None),
+            "PI": (0.7, 2.0 * model.tau, None),
+            "PID": (1.2, 2.0 * model.tau, 0.42 * model.tau)},
+    }
+    kp_c, ti_c, td_c = tables[variant][ctype]
     return _apply_type(kp_c * base, ti_c, td_c, ctype)
 
 
@@ -90,21 +135,64 @@ def imc(model: FopdtModel, ctype: str, lam: float | None) -> dict:
     return _apply_type(kp, ti, td, ctype)
 
 
+def simc(model: FopdtModel, ctype: str, tau_c: float | None) -> dict:
+    """
+    SIMC — Skogestad IMC (2003), уточнённая версия IMC.
+
+    tau_c — желаемая постоянная времени замкнутого контура (сек).
+    Рекомендуемое значение по умолчанию: tau_c = τ (запаздывание).
+    Малое tau_c — быстрее, но менее робастно; большое — плавнее.
+    """
+    if tau_c is None or tau_c <= 0:
+        tau_c = model.tau
+    kp = model.T / (abs(model.K) * (tau_c + model.tau))
+    ti = min(model.T, 4.0 * (tau_c + model.tau))
+    td = model.tau / 2.0
+    return _apply_type(kp, ti, td, ctype)
+
+
+def amigo(model: FopdtModel, ctype: str) -> dict:
+    """
+    AMIGO — Åström–Hägglund (2004), современный модельный метод.
+
+    Оптимизирован по интегральной ошибке IAE при ограничении
+    максимальной чувствительности Ms ≤ 1,4 (робастные настройки).
+    То же ядро Kp/Ti/Td используется для P/PI (без D/без I+D).
+    """
+    K, T, tau = abs(model.K), model.T, model.tau
+    if tau <= 0:
+        raise ValueError("Метод AMIGO требует положительного tau.")
+    kp = (1.0 / K) * (0.2 + 0.45 * T / tau)
+    ti = tau * (0.4 * tau + 0.8 * T) / (tau + 0.1 * T)
+    td = 0.5 * tau * T / (0.3 * tau + T)
+    return _apply_type(kp, ti, td, ctype)
+
+
 def tune(method: str, model: FopdtModel, ctype: str,
-         ku: float | None = None, tu: float | None = None,
-         lam: float | None = None,
-         itae_optimizer=None) -> dict:
+          ku: float | None = None, tu: float | None = None,
+          lam: float | None = None, tau_c: float | None = None,
+          itae_optimizer=None) -> dict:
     """Диспетчер методов настройки."""
     if method == "zn_open":
         return zn_open_loop(model, ctype)
     if method == "zn_closed":
         return zn_closed_loop(ku, tu, ctype)
-    if method == "chr_0":
-        return chr(model, ctype, "0")
-    if method == "chr_20":
-        return chr(model, ctype, "20")
+    if method == "cohen":
+        return cohen(model, ctype)
+    if method == "chr_sp0":
+        return chr(model, ctype, "sp0")
+    if method == "chr_sp20":
+        return chr(model, ctype, "sp20")
+    if method == "chr_ds0":
+        return chr(model, ctype, "ds0")
+    if method == "chr_ds20":
+        return chr(model, ctype, "ds20")
     if method == "imc":
         return imc(model, ctype, lam)
+    if method == "simc":
+        return simc(model, ctype, tau_c)
+    if method == "amigo":
+        return amigo(model, ctype)
     if method == "itae":
         if itae_optimizer is None:
             raise ValueError("Оптимизатор ITAE недоступен.")

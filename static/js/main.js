@@ -123,6 +123,7 @@ const PIDApp = (() => {
     payload.method = $("#method").val();
     payload.ctype = $("#ctype").val();
     payload.lambda = parseFloat($("#lambda-input").val()) || null;
+    payload.tau_c = parseFloat($("#tau_c-input").val()) || null;
     payload.use_saturation = $("#use-saturation").is(":checked");
     payload.cv_clip = $("#use-saturation").is(":checked");
 
@@ -156,11 +157,11 @@ const PIDApp = (() => {
   }
 
   $(() => {
-    // Показ поля λ только для IMC
+    // Показ поля λ только для IMC, τc — только для SIMC
     $("#method").on("change", () => {
-      const isImc = $("#method").val() === "imc";
-      $("#lambda-group").toggle(isImc);
-      // ZN closed-loop требует автоколебаний; предупредим
+      const m = $("#method").val();
+      $("#lambda-group").toggle(m === "imc");
+      $("#tau_c-group").toggle(m === "simc");
       $(".lambda-hint").remove();
     });
 

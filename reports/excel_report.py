@@ -11,6 +11,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
+from reports.pdf_report import METHOD_NAMES
+
 
 def build_excel(state: dict, data) -> io.BytesIO:
     wb = Workbook()
@@ -57,7 +59,8 @@ def build_excel(state: dict, data) -> io.BytesIO:
         ("Ti, с", round(coeffs["Ti"], 4) if coeffs.get("Ti") else "—"),
         ("Td, с", round(coeffs["Td"], 4) if coeffs.get("Td") else "—"),
         ("Тип регулятора", state.get("ctype", "PID")),
-        ("Метод настройки", state.get("tuning_method", "—")),
+        ("Метод настройки",
+         METHOD_NAMES.get(state.get("tuning_method"), "—")),
         ("Шаг дискретизации данных, с", round(data.dt, 6)),
     ]
     for r in rows:

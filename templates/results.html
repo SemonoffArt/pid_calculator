@@ -49,12 +49,25 @@
       <div class="mb-2">
         <label for="method" class="form-label">Метод настройки</label>
         <select class="form-select" id="method">
-          <option value="zn_open">Зиглер–Николс (разомкнутый)</option>
-          <option value="zn_closed">Зиглер–Николс (замкнутый)</option>
-          <option value="chr_0">Чен–Хрон (без перерегулирования)</option>
-          <option value="chr_20">Чен–Хрон (быстрое затухание)</option>
-          <option value="imc">Внутренняя модель (IMC)</option>
-          <option value="itae">Оптимизация ITAE</option>
+          <optgroup label="Зиглер–Николс">
+            <option value="zn_open">З–Н, разомкнутый контур</option>
+            <option value="zn_closed">З–Н, замкнутый контур (Ku/Tu)</option>
+          </optgroup>
+          <optgroup label="Cohen–Coon / CHR">
+            <option value="cohen">Cohen–Coon (1953)</option>
+            <option value="chr_sp0">Чен–Хрон: уставка, 0 %</option>
+            <option value="chr_sp20">Чен–Хрон: уставка, 20 %</option>
+            <option value="chr_ds0">Чен–Хрон: возмущение, 0 %</option>
+            <option value="chr_ds20">Чен–Хрон: возмущение, 20 %</option>
+          </optgroup>
+          <optgroup label="Модельные (IMC/SIMC/AMIGO)">
+            <option value="imc">Внутренняя модель (IMC)</option>
+            <option value="simc">SIMC (Skogestad, 2003)</option>
+            <option value="amigo">AMIGO (Åström–Hägglund, 2004)</option>
+          </optgroup>
+          <optgroup label="Оптимизация">
+            <option value="itae">Оптимизация ITAE</option>
+          </optgroup>
         </select>
       </div>
       <div class="mb-2">
@@ -69,6 +82,12 @@
         <label for="lambda-input" class="form-label">λ для IMC, с
           <span class="text-muted">(0 — авто)</span></label>
         <input type="number" class="form-control" id="lambda-input"
+               value="0" min="0" step="1">
+      </div>
+      <div class="mb-2" id="tau_c-group" style="display:none;">
+        <label for="tau_c-input" class="form-label">τc для SIMC, с
+          <span class="text-muted">(0 — авто = τ)</span></label>
+        <input type="number" class="form-control" id="tau_c-input"
                value="0" min="0" step="1">
       </div>
       <div class="form-check mb-2">

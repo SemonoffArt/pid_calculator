@@ -184,6 +184,46 @@ print(f"  Симуляция: метрики {metrics}")
 check("Симуляция сходится к заданию",
       abs(sim[2][-1] - sim[1][-1]) < 0.05 * abs(sim[1][-1]))
 
+# --- Новые методы (Cohen-Coon, 4 варианта CHR, SIMC, AMIGO):
+# все должны давать положительные Kp/Ti/Td для PID и сходиться.
+new_methods = ("cohen", "chr_sp0", "chr_sp20", "chr_ds0", "chr_ds20",
+               "simc", "amigo")
+for m in new_methods:
+    c = pid_tuning.tune(m, model, "PID", ku=res["Ku"], tu=res["Tu"])
+    check(f"{m}: Kp/Ti/Td > 0",
+          c["Kp"] > 0 and c["Ti"] > 0 and c["Td"] > 0)
+    sim_n = simulator.simulate_closed_loop(
+        model.K, model.T, model.tau, "PID", c["Kp"], c["Ti"], c["Td"],
+        dt_sim=0.05, sim_time=400, sp_start=0.0, sp_target=50.0,
+        cv_clip=True)
+    check(f"{m}: симуляция сходится к заданию",
+          abs(sim_n[2][-1] - sim_n[1][-1]) < 0.05 * abs(sim_n[1][-1]))
+
+# Эталонные формулы Z-N на модели K=1.58, T=7.57, L=2.1
+m_ref = identification.FopdtModel(K=1.58, T=7.57, tau=2.1)
+zn_p = pid_tuning.tune("zn_open", m_ref, "P")
+check("Z-N P формула: Kp=T/(K*L)", abs(zn_p["Kp"] - 7.57 / (1.58 * 2.1)) < 1e-6)
+zn = pid_tuning.tune("zn_open", m_ref, "PID")
+check("Z-N PID формула: Ti=2L", abs(zn["Ti"] - 4.2) < 1e-6)
+check("Z-N PID формула: Td=0.5L", abs(zn["Td"] - 1.05) < 1e-6)
+# Cohen-Coon PID: Kp = (1/K)*(T/L)*(4/3 + r/4), r=L/T
+r = 2.1 / 7.57
+cc_kp = (1 / 1.58) * (7.57 / 2.1) * (4 / 3 + r / 4)
+cc = pid_tuning.tune("cohen", m_ref, "PID")
+check("Cohen-Coon PID формула: Kp", abs(cc["Kp"] - cc_kp) / cc_kp < 1e-6)
+# AMIGO PID: Kp = (1/K)*(0.2 + 0.45*T/L)
+am_kp = (1 / 1.58) * (0.2 + 0.45 * 7.57 / 2.1)
+am = pid_tuning.tune("amigo", m_ref, "PID")
+check("AMIGO PID формула: Kp", abs(am["Kp"] - am_kp) / am_kp < 1e-6)
+# SIMC PID при tau_c=L: Kp = (1/K)*T/(L+L) = T/(2*K*L)
+sm = pid_tuning.tune("simc", m_ref, "PID", tau_c=2.1)
+check("SIMC PID формула (tau_c=L): Kp",
+      abs(sm["Kp"] - 7.57 / (2 * 1.58 * 2.1)) / sm["Kp"] < 1e-6)
+# CHR servo 0% PID: Kp=0.6*T/(K*L)
+chr0 = pid_tuning.tune("chr_sp0", m_ref, "PID")
+check("CHR servo 0% PID формула: Kp",
+      abs(chr0["Kp"] - 0.6 * 7.57 / (1.58 * 2.1)) / chr0["Kp"] < 1e-6)
+
 # --- ISA-стандартный ПИД: D-составляющая (с фильтром Td/N) должна
 # подавлять перерегулирование по сравнению с чистым PI.
 k_isa, t_isa, tau_isa = 1.58, 7.57, 2.1

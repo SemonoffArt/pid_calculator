@@ -213,6 +213,7 @@ def register_routes(app: Flask) -> None:
         method = payload.get("method", "zn_open")
         ctype = payload.get("ctype", "PID")
         lam = payload.get("lambda")
+        tau_c = payload.get("tau_c")
         manual = payload.get("manual")  # {"Kp","Ti","Td"} при ручной коррекции
         # Ручная ступенька задания (в единицах PV) для симуляции
         sp_target = _num(payload.get("sp_target"))
@@ -244,6 +245,7 @@ def register_routes(app: Flask) -> None:
                 coeffs = pid_tuning.tune(method, model, ctype,
                                          ku=state.get("Ku"),
                                          tu=state.get("Tu"), lam=lam,
+                                         tau_c=tau_c,
                                          itae_optimizer=itae_opt)
             except ValueError as exc:
                 return jsonify({"error": str(exc)}), 400
