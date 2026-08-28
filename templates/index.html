@@ -27,7 +27,7 @@
           <div class="col-md-6">
             <label for="filter_window" class="form-label">Окно медианного фильтра, точек</label>
             <input type="number" class="form-control" id="filter_window" name="filter_window"
-                   value="5" min="0" max="15" step="1">
+                   value="0" min="0" max="15" step="1">
             <div class="form-text">0 — без медианной фильтрации</div>
           </div>
         </div>
@@ -64,7 +64,7 @@
       <fieldset class="border rounded p-3 mb-3">
         <legend class="fs-6">Единицы измерения PV / SP</legend>
         <div class="form-check mb-2">
-          <input class="form-check-input" type="checkbox" id="normalize" name="normalize" value="1">
+          <input class="form-check-input" type="checkbox" id="normalize" name="normalize" value="1" checked>
           <label class="form-check-label" for="normalize">
             Нормализовать PV и SP в 0–100 %
           </label>
