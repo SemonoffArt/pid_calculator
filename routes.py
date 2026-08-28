@@ -239,6 +239,19 @@ def register_routes(app: Flask) -> None:
         if not state.get("K"):
             return jsonify({"error": "Данные не загружены."}), 400
 
+        # Ручное редактирование параметров модели FOPDT (опционально)
+        model_k = _num(payload.get("model_k"))
+        model_t = _num(payload.get("model_t"))
+        model_tau = _num(payload.get("model_tau"))
+        if model_k is not None:
+            state["K"] = model_k
+        if model_t is not None:
+            state["T"] = model_t
+        if model_tau is not None:
+            state["tau"] = model_tau
+        # Сохраняем правки, чтобы они переживали последующие запросы
+        save_state(K=state["K"], T=state["T"], tau=state["tau"])
+
         try:
             data = _load_processed()
         except (FileNotFoundError, data_loader.DataError):

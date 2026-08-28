@@ -91,9 +91,9 @@ const PIDApp = (() => {
     $("#in-td").val(data.coeffs.Td != null ? fmt(data.coeffs.Td, 2) : "");
 
     if (data.model) {
-      $("#model-K").text(fmt(data.model.K));
-      $("#model-T").text(fmt(data.model.T, 2));
-      $("#model-tau").text(fmt(data.model.tau, 2));
+      $("#model-K").val(fmt(data.model.K));
+      $("#model-T").val(fmt(data.model.T, 2));
+      $("#model-tau").val(fmt(data.model.tau, 2));
     }
 
     // П2: оценка управляемости объекта
@@ -155,6 +155,13 @@ const PIDApp = (() => {
     payload.lambda = parseFloat($("#lambda-input").val()) || null;
     payload.tau_c = parseFloat($("#tau_c-input").val()) || null;
     payload.use_saturation = $("#use-saturation").is(":checked");
+    // Ручное редактирование параметров модели FOPDT (если заданы)
+    const mK = parseFloat($("#model-K").val());
+    payload.model_k = isFinite(mK) ? mK : null;
+    const mT = parseFloat($("#model-T").val());
+    payload.model_t = isFinite(mT) ? mT : null;
+    const mTau = parseFloat($("#model-tau").val());
+    payload.model_tau = isFinite(mTau) ? mTau : null;
     // Диапазон хода CV из карточки «Параметры симуляции»
     const cvLimit = parseFloat($("#cv-limit").val());
     payload.cv_limit = cvLimit > 0 ? cvLimit : null;
@@ -223,6 +230,7 @@ const PIDApp = (() => {
 
     $("#recalc-btn").on("click", () => recalculate());
     $("#run-sim-btn").on("click", () => recalculate(collectManual()));
+    $("#apply-model-btn").on("click", () => recalculate());
 
     // Подсказки-вопросики у полей (делегирование — работает для всех карточек)
     if (window.bootstrap && window.bootstrap.Tooltip) {

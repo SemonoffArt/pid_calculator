@@ -22,20 +22,28 @@
       <table class="table table-sm table-striped">
         <tr><th>K (усиление)
             <span class="help-q" data-bs-toggle="tooltip"
-              data-bs-title="Коэффициент усиления объекта. Насколько изменится PV (в единицах измерения) при изменении выхода регулятора CV на 1 %. Определяется как отношение установившихся изменений ΔPV/ΔCV. Отрицательный K означает обратное действие: увеличение CV уменьшает PV (например, клапан охлаждения). Знак учитывается автоматически.">?</span></th>
-            <td id="model-K">{{ "%.4f"|format(state.K or 0) }}
+              data-bs-title="Коэффициент усиления объекта. Насколько изменится PV (в единицах измерения) при изменении выхода регулятора CV на 1 %. Определяется как отношение установившихся изменений ΔPV/ΔCV. Отрицательный K означает обратное действие: увеличение CV уменьшает PV (например, клапан охлаждения). Знак учитывается автоматически. Можно отредактировать вручную.">?</span></th>
+            <td><input type="number" step="any" class="form-control form-control-sm"
+                       id="model-K" value="{{ '%.4g'|format(state.K or 0) }}">
               {% if state.K and state.K < 0 %}
                 <span class="badge text-bg-info">обратное действие</span>
               {% endif %}
             </td></tr>
         <tr><th>T (пост. времени), с
             <span class="help-q" data-bs-toggle="tooltip"
-              data-bs-title="Постоянная времени объекта. Время, за которое выход достигает 63,2 % от установившегося изменения после прохождения запаздывания. Характеризует инерционность: чем больше T, тем медленнее реагирует процесс.">?</span></th>
-            <td id="model-T">{{ "%.2f"|format(state.T or 0) }}</td></tr>
+              data-bs-title="Постоянная времени объекта. Время, за которое выход достигает 63,2 % от установившегося изменения после прохождения запаздывания. Характеризует инерционность: чем больше T, тем медленнее реагирует процесс. Можно отредактировать вручную.">?</span></th>
+            <td><input type="number" step="any" class="form-control form-control-sm"
+                       id="model-T" value="{{ '%.4g'|format(state.T or 0) }}"></td></tr>
         <tr><th>τ (запаздывание), с
             <span class="help-q" data-bs-toggle="tooltip"
-              data-bs-title="Чистое запаздывание. Время от изменения входа до начала реакции выхода (транспорт вещества, гидравлика, дискретность измерений). Чем больше отношение τ/T, тем труднее объект и тем осторожнее нужно выбирать Kp.">?</span></th>
-            <td id="model-tau">{{ "%.2f"|format(state.tau or 0) }}</td></tr>
+              data-bs-title="Чистое запаздывание. Время от изменения входа до начала реакции выхода (транспорт вещества, гидравлика, дискретность измерений). Чем больше отношение τ/T, тем труднее объект и тем осторожнее нужно выбирать Kp. Можно отредактировать вручную.">?</span></th>
+            <td><input type="number" step="any" class="form-control form-control-sm"
+                       id="model-tau" value="{{ '%.4g'|format(state.tau or 0) }}"></td></tr>
+        <tr><td colspan="2">
+          <button class="btn btn-outline-primary btn-sm w-100" id="apply-model-btn">Применить параметры модели</button>
+          <div class="form-text">Применяет отредактированные K, T, τ — пересчитывает
+            коэффициенты и симуляцию. <span id="model-edit-msg" class="text-danger"></span></div>
+        </td></tr>
         <tr><th>Ku / Tu
             <span class="help-q" data-bs-toggle="tooltip"
               data-bs-title="Критические параметры замкнутого контура (метод Зиглера–Николса по замкнутому контуру). Ku — усиление P-регулятора на границе устойчивости (незатухающие колебания); Tu — период этих автоколебаний. Рассчитываются из сдвига фазы −180° или релейным методом: Ku = 4·d/(π·a).">?</span></th>
@@ -196,7 +204,7 @@
           <span class="help-q" data-bs-toggle="tooltip"
             data-bs-title="Целевое значение PV, к которому стремится контур. Пусто — используется профиль SP из загруженных данных.">?</span></label>
         <input type="number" step="any" class="form-control" id="sim-sp"
-               value="{{ '%.3g'|format(state.pv_span[1]) if state.pv_span and state.pv_span[1] is not none else 50 }}">
+               value="50">
       </div>
       <div class="mb-2">
         <label for="cv-limit" class="form-label">Ограничение CV (0–100 %), max
