@@ -115,7 +115,7 @@
                value="0" min="0" step="1">
       </div>
       <div class="form-check mb-2">
-        <input class="form-check-input" type="checkbox" id="use-saturation" checked>
+        <input class="form-check-input" type="checkbox" id="use-saturation">
         <label class="form-check-label" for="use-saturation">
           Учитывать насыщение регулятора
           <span class="help-q" data-bs-toggle="tooltip"
@@ -125,31 +125,6 @@
       <button class="btn btn-primary w-100" id="recalc-btn">Пересчитать</button>
       <div class="spinner-border text-primary mt-3 d-none mx-auto" id="spinner"
            role="status"><span class="visually-hidden">Загрузка…</span></div>
-    </div>
-
-    <div class="card shadow-sm p-3 mb-3">
-      <h5 class="mb-3">Параметры симуляции переходного процесса</h5>
-      <div class="mb-2">
-        <label for="sim-time" class="form-label">Время симуляции, с
-          <span class="help-q" data-bs-toggle="tooltip"
-            data-bs-title="Длительность расчёта переходного процесса. Если не задано — подбирается автоматически по данным (с запасом на установление).">?</span></label>
-        <input type="number" class="form-control" id="sim-time"
-               value="100" min="1" step="10">
-      </div>
-      <div class="mb-2">
-        <label for="sim-sp" class="form-label">Уставка (SP)
-          <span class="help-q" data-bs-toggle="tooltip"
-            data-bs-title="Целевое значение PV, к которому стремится контур. Пусто — используется профиль SP из загруженных данных.">?</span></label>
-        <input type="number" step="any" class="form-control" id="sim-sp"
-               value="{{ '%.3g'|format(state.pv_span[1]) if state.pv_span and state.pv_span[1] is not none else 50 }}">
-      </div>
-      <div class="mb-2">
-        <label for="cv-limit" class="form-label">Ограничение CV (0–100 %), max
-          <span class="help-q" data-bs-toggle="tooltip"
-            data-bs-title="Верхний предел хода выхода регулятора (в %). CV ограничивается диапазоном 0…max. Значение 0 — без ограничения (как на внешних калькуляторах).">?</span></label>
-        <input type="number" class="form-control" id="cv-limit"
-               value="100" min="0" max="100" step="10">
-      </div>
     </div>
 
     <div class="card shadow-sm p-3 mb-3">
@@ -183,7 +158,36 @@
       </div>
       <div class="spinner-border text-primary mt-3 d-none mx-auto" id="spinner"
            role="status"><span class="visually-hidden">Загрузка…</span></div>
-      <div class="d-grid gap-2 mt-3">
+    </div>
+
+    <div class="card shadow-sm p-3 mb-3">
+      <h5 class="mb-3">Параметры симуляции переходного процесса</h5>
+      <div class="mb-2">
+        <label for="sim-time" class="form-label">Время симуляции, с
+          <span class="help-q" data-bs-toggle="tooltip"
+            data-bs-title="Длительность расчёта переходного процесса. Если не задано — подбирается автоматически по данным (с запасом на установление).">?</span></label>
+        <input type="number" class="form-control" id="sim-time"
+               value="100" min="1" step="10">
+      </div>
+      <div class="mb-2">
+        <label for="sim-sp" class="form-label">Уставка (SP)
+          <span class="help-q" data-bs-toggle="tooltip"
+            data-bs-title="Целевое значение PV, к которому стремится контур. Пусто — используется профиль SP из загруженных данных.">?</span></label>
+        <input type="number" step="any" class="form-control" id="sim-sp"
+               value="{{ '%.3g'|format(state.pv_span[1]) if state.pv_span and state.pv_span[1] is not none else 50 }}">
+      </div>
+      <div class="mb-2">
+        <label for="cv-limit" class="form-label">Ограничение CV (0–100 %), max
+          <span class="help-q" data-bs-toggle="tooltip"
+            data-bs-title="Верхний предел хода выхода регулятора (в %). CV ограничивается диапазоном 0…max. Значение 0 — без ограничения (как на внешних калькуляторах).">?</span></label>
+        <input type="number" class="form-control" id="cv-limit"
+               value="100" min="0" max="100" step="10">
+      </div>
+    </div>
+
+    <div class="card shadow-sm p-3 mb-3">
+      <h5 class="mb-3">Экспорт</h5>
+      <div class="d-grid gap-2">
         <a href="{{ url_for('export_pdf') }}" class="btn btn-outline-danger btn-sm">Экспорт PDF</a>
         <a href="{{ url_for('export_excel') }}" class="btn btn-outline-success btn-sm">Экспорт Excel</a>
       </div>
