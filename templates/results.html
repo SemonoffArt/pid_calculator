@@ -152,8 +152,7 @@
                value="{{ '%.6g'|format(state.coeffs.Td) if state.coeffs and state.coeffs.Td else '' }}">
       </div>
       <div id="metrics-box" class="small text-muted mb-2"></div>
-      <div class="d-grid gap-2">
-        <button class="btn btn-primary w-100" id="run-sim-btn">Запустить симуляцию</button>
+      <div class="d-grid">
         <button class="btn btn-outline-secondary w-100" id="recalc-btn">Пересчитать по методу</button>
       </div>
       <div class="spinner-border text-primary mt-3 d-none mx-auto" id="spinner"
@@ -169,8 +168,31 @@
         <input type="number" class="form-control" id="sim-time"
                value="100" min="1" step="10">
       </div>
+      <div class="row g-2">
+        <div class="col-6">
+          <label for="sim-pv0" class="form-label">PV (начальное)
+            <span class="help-q" data-bs-toggle="tooltip"
+              data-bs-title="Стартовое значение PV в момент t=0. По умолчанию 0.">?</span></label>
+          <input type="number" step="any" class="form-control" id="sim-pv0"
+                 value="0">
+        </div>
+        <div class="col-6">
+          <label for="sim-cv0" class="form-label">CV (начальное)
+            <span class="help-q" data-bs-toggle="tooltip"
+              data-bs-title="Стартовое значение хода регулятора в момент t=0. По умолчанию 0.">?</span></label>
+          <input type="number" step="any" class="form-control" id="sim-cv0"
+                 value="0">
+        </div>
+      </div>
       <div class="mb-2">
-        <label for="sim-sp" class="form-label">Уставка (SP)
+        <label for="sim-sp0" class="form-label">SP (начальное)
+          <span class="help-q" data-bs-toggle="tooltip"
+            data-bs-title="Стартовое значение задания в момент t=0, от которого начинается ступенька к целевой уставке. По умолчанию 50.">?</span></label>
+        <input type="number" step="any" class="form-control" id="sim-sp0"
+               value="50">
+      </div>
+      <div class="mb-2">
+        <label for="sim-sp" class="form-label">Уставка (SP), цель
           <span class="help-q" data-bs-toggle="tooltip"
             data-bs-title="Целевое значение PV, к которому стремится контур. Пусто — используется профиль SP из загруженных данных.">?</span></label>
         <input type="number" step="any" class="form-control" id="sim-sp"
@@ -183,6 +205,9 @@
         <input type="number" class="form-control" id="cv-limit"
                value="100" min="0" max="100" step="10">
       </div>
+      <button class="btn btn-primary w-100 mt-2" id="run-sim-btn">Запустить симуляцию</button>
+      <div class="spinner-border text-primary mt-3 d-none mx-auto" id="sim-spinner"
+           role="status"><span class="visually-hidden">Загрузка…</span></div>
     </div>
 
     <div class="card shadow-sm p-3 mb-3">

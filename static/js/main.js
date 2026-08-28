@@ -134,8 +134,8 @@ const PIDApp = (() => {
   }
 
   function setBusy(busy) {
-    $("#spinner").toggleClass("d-none", !busy);
-    $("#recalc-btn").prop("disabled", busy);
+    $("#spinner, #sim-spinner").toggleClass("d-none", !busy);
+    $("#recalc-btn, #run-sim-btn").prop("disabled", busy);
   }
 
   function collectManual() {
@@ -163,12 +163,17 @@ const PIDApp = (() => {
     // Параметры симуляции переходного процесса
     const simTime = parseFloat($("#sim-time").val());
     payload.sim_time = simTime > 0 ? simTime : null;
+    const pv0 = parseFloat($("#sim-pv0").val());
+    payload.pv0 = isFinite(pv0) ? pv0 : null;
+    const cv0 = parseFloat($("#sim-cv0").val());
+    payload.cv0 = isFinite(cv0) ? cv0 : null;
+    const sp0 = parseFloat($("#sim-sp0").val());
+    payload.sp_start = isFinite(sp0) ? sp0 : null;
 
     // Уставка (SP): приоритет — из карточки параметров, иначе из данных
     const spVal = $("#sim-sp").val();
     payload.sp_target = spVal !== "" && spVal !== null
       ? parseFloat(spVal) : null;
-    payload.sp_start = null;
     if (!manual) { delete payload.manual; }
 
     setBusy(true);

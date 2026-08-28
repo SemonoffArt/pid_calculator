@@ -23,12 +23,19 @@ def _simulate(K: float, T: float, tau: float,
               d_filter_n: float, time: np.ndarray, sp: np.ndarray,
               cv_clip: bool = True, cv_min: float = 0.0,
               cv_max: float = 100.0,
-              substeps: int = 5) -> tuple[np.ndarray, np.ndarray]:
+              substeps: int = 5,
+              pv0: float | None = None,
+              cv0: float | None = None) -> tuple[np.ndarray, np.ndarray]:
     """Дискретная симуляция замкнутого контура. Возвращает t, pv, cv.
 
     Каждый шаг данных делится на подшаги (substeps), внутри которых объект
     интегрируется ТОЧНО (ZOH-дискретизация звена первого порядка). Мелкий
     подшаг важен для устойчивости контуров с усилением, близким к границе.
+
+    pv0/cv0 — начальная рабочая точка: стартовое значение PV и хода CV
+    (буфер запаздывания заполняется cv0, чтобы объект не «проседал» в первую
+    секунду из-за нулевого начального управления). По умолчанию PV = SP[0],
+    CV = 0 (идеализированный старт из равновесия).
     """
     n = len(time)
     dt = time[1] - time[0]
@@ -39,11 +46,16 @@ def _simulate(K: float, T: float, tau: float,
     # Буфер задержки управляющего воздействия (кольцевой массив)
     buf_len = max(delay_steps + m + 2, m + 2)
     ubuf = np.zeros(buf_len)
+    if cv0 is not None:
+        ubuf.fill(cv0)
 
-    y = sp[0]                               # начальное PV = начальное SP
+    y = pv0 if pv0 is not None else sp[0]   # начальное PV
     integ = 0.0                             # интеграл ошибки
     e_prev = sp[0] - y                      # предыдущая ошибка
     dfilt = 0.0                             # состояние D-фильтра
+    if cv0 is not None and kp != 0:
+        # Начинаем из равновесия: CV = Kp*(e + integ) при e=0 → integ = cv0/Kp
+        integ = cv0 / kp
 
     # Точная ZOH-дискретизация на подшаге h: y = a*y + b*u_delayed
     if T > 0:
@@ -114,7 +126,9 @@ def simulate_closed_loop(K: float, T: float, tau: float, controller_type: str,
                          sp_start: float | None = None,
                          sp_target: float | None = None,
                          cv_clip: bool = True, cv_min: float = 0.0,
-                         cv_max: float = 100.0):
+                         cv_max: float = 100.0,
+                         pv0: float | None = None,
+                         cv0: float | None = None):
     """
     Симуляция отклика замкнутой системы.
 
@@ -123,6 +137,8 @@ def simulate_closed_loop(K: float, T: float, tau: float, controller_type: str,
     sp_start/sp_target — ручная ступенька задания от sp_start к sp_target
     (приоритетнее sp_profile/sp_array).
     cv_clip — ограничивать ли выход регулятора диапазоном [cv_min, cv_max].
+    pv0/cv0 — начальная рабочая точка (стартовое PV и ход CV); если не
+    заданы, PV стартует с SP[0], CV с 0.
     Возвращает (time, sp, pv, cv).
     """
     if sp_start is not None and sp_target is not None:
@@ -152,7 +168,8 @@ def simulate_closed_loop(K: float, T: float, tau: float, controller_type: str,
     kp_eff = np.sign(K) * kp
 
     pv, cv = _simulate(K, T, tau, kp_eff, ti_eff, td_eff, n_filter, time, sp,
-                       cv_clip=cv_clip, cv_min=cv_min, cv_max=cv_max)
+                       cv_clip=cv_clip, cv_min=cv_min, cv_max=cv_max,
+                       pv0=pv0, cv0=cv0)
     return time, sp, pv, cv
 
 

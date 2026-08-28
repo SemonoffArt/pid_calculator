@@ -260,6 +260,33 @@ for clip, ref_ov in ((True, 13.7), (False, 46.5)):
     print(f"  Референс clip={clip}: OV={q['overshoot']:.1f}% "
           f"(ожид. {ref_ov}%), IAE={q['iae']:.1f}")
 
+# --- Начальная рабочая точка (pv0/cv0): холодный старт и равновесие.
+# Холодный старт: PV=0, CV=0, SP 0->50 — стартует с нуля и выходит на задание.
+t, sp, pv, cv = simulator.simulate_closed_loop(
+    ref_model.K, ref_model.T, ref_model.tau, "PI",
+    ref_coeffs["Kp"], ref_coeffs["Ti"], None,
+    dt_sim=0.05, sim_time=100, sp_start=0.0, sp_target=50.0,
+    pv0=0.0, cv0=0.0)
+cv_cold0 = cv[0]
+check("Холодный старт: PV и CV начинаются с 0",
+      abs(pv[0]) < 0.01 and abs(cv_cold0) < 0.01)
+check("Холодный старт: PV сходится к заданию",
+      abs(pv[-1] - sp[-1]) < 0.05 * abs(sp[-1]))
+
+# Равновесие из ненулевой рабочей точки: PV=35, CV=35/K, SP 35->50.
+cv_eq = 35.0 / ref_model.K
+t, sp, pv, cv = simulator.simulate_closed_loop(
+    ref_model.K, ref_model.T, ref_model.tau, "PI",
+    ref_coeffs["Kp"], ref_coeffs["Ti"], None,
+    dt_sim=0.05, sim_time=100, sp_start=35.0, sp_target=50.0,
+    pv0=35.0, cv0=cv_eq)
+check("Равновесие: PV стартует с заданной точки 35",
+      abs(pv[0] - 35.0) < 1.0)
+check("Равновесие: CV стартует с 35/K, а не с 0",
+      abs(cv[0] - cv_eq) < 2.0 and cv[0] > 1.0)
+print(f"  pv0/cv0: холодный старт cv0={cv_cold0:.1f}, "
+      f"равновесие cv0={cv[0]:.1f} (ожид. ~{cv_eq:.1f})")
+
 # ------------------------------------------------------------ route tests
 app.config["TESTING"] = True
 client = app.test_client()

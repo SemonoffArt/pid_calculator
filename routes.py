@@ -218,6 +218,9 @@ def register_routes(app: Flask) -> None:
         # Ручная ступенька задания (в единицах PV) для симуляции
         sp_target = _num(payload.get("sp_target"))
         sp_start = _num(payload.get("sp_start"))
+        # Начальная рабочая точка симуляции (из карточки «Параметры симуляции»)
+        pv0 = _num(payload.get("pv0"))
+        cv0 = _num(payload.get("cv0"))
         use_saturation = bool(payload.get("use_saturation", False))
         # Время симуляции из карточки «Параметры симуляции» (иначе — авто)
         sim_time_inp = _num(payload.get("sim_time"))
@@ -306,7 +309,8 @@ def register_routes(app: Flask) -> None:
             sim_time=sim_time,
             sp_array=data.sp,
             sp_start=sp_start, sp_target=sp_target,
-            cv_clip=cv_clip, cv_min=cv_min, cv_max=cv_max)
+            cv_clip=cv_clip, cv_min=cv_min, cv_max=cv_max,
+            pv0=pv0, cv0=cv0)
         metrics = simulator.quality_metrics(sim[0], sim[1], sim[2], sim[3],
                                             cv_min=cv_min, cv_max=cv_max)
 
