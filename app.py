@@ -52,4 +52,8 @@ def create_app(config_class: type[Config] = Config) -> Flask:
 app = create_app()
 
 if __name__ == "__main__":
-    app.run(debug=Config.DEBUG, host="127.0.0.1", port=5000)
+    # Debug mode can be enabled via env var: set PID_DEBUG=1
+    debug_mode = os.environ.get("PID_DEBUG", "0") == "1"
+    host = os.environ.get("PID_HOST", "0.0.0.0")
+    port = int(os.environ.get("PID_PORT", "5943"))
+    app.run(debug=debug_mode, host=host, port=port, use_reloader=False)
