@@ -291,3 +291,9 @@ footer {
   max-width: 340px;
   text-align: left;
 }
+
+/* Имя параметра и значок-подсказка всегда на одной строке */
+.card .table th { white-space: nowrap; }
+
+/* Больше отступ между именем параметра и его значением */
+.card .table td { padding-left: 1.25rem; }
