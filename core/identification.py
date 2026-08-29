@@ -18,6 +18,13 @@ import numpy as np
 from scipy.optimize import curve_fit, minimize
 
 
+def _safe_median(arr: np.ndarray) -> float:
+    """Медиана без RuntimeWarning для пустого среза."""
+    if arr.size == 0:
+        return float("nan")
+    return float(np.median(arr))
+
+
 @dataclass
 class FopdtModel:
     """Параметры модели первого порядка с запаздыванием."""
@@ -84,16 +91,19 @@ def identify_step_response(time: np.ndarray, cv: np.ndarray, pv: np.ndarray,
     seg_end = _next_event_index(cv, step_index, 0.05)
 
     pre = slice(max(0, step_index - 20), step_index)
-    y0 = float(np.median(pv[pre]))
-    u0 = float(np.median(cv[pre]))
+    y0 = _safe_median(pv[pre])
+    u0 = _safe_median(cv[pre])
 
     # Установившиеся значения — медиана последней четверти участка
     q_start = step_index + max(3, int(0.75 * (seg_end - step_index)))
-    yss = float(np.median(pv[q_start:seg_end]))
-    uss = float(np.median(cv[q_start:seg_end]))
+    yss = _safe_median(pv[q_start:seg_end])
+    uss = _safe_median(cv[q_start:seg_end])
 
     du = uss - u0
     dy = yss - y0
+    if not np.isfinite(du) or not np.isfinite(dy):
+        raise ValueError("Недостаточно данных для определения установившихся "
+                         "режимов до и после ступеньки.")
     if abs(du) < 1e-9:
         raise ValueError("Не удалось определить величину изменения CV.")
     if abs(dy) < 1e-12:
