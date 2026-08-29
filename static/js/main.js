@@ -113,6 +113,16 @@ const PIDApp = (() => {
     return s;
   }
 
+  // Значок-подсказка (?) с описанием метода настройки
+  function methodHelpIcon(method) {
+    const text = METHOD_HELP[method] || "";
+    const esc = text
+      .replace(/&/g, "&amp;").replace(/"/g, "&quot;")
+      .replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return `<span class="help-q" data-bs-toggle="tooltip" tabindex="0"
+      data-bs-title="${esc}">?</span>`;
+  }
+
   // Основная плавающая карточка (выбранный метод) + карточки остальных
   function renderAllSims(data) {
     const methods = data.methods || [];
@@ -122,7 +132,8 @@ const PIDApp = (() => {
     // -- основная карточка
     const primaryDiv = $("#plot-sim-primary");
     if (primary && primary.sim) {
-      $("#sim-primary-title").text(METHOD_NAMES[primary.method] || primary.method);
+      const name = METHOD_NAMES[primary.method] || primary.method;
+      $("#sim-primary-title").html(`${name}${methodHelpIcon(primary.method)}`);
       if (primary.error) {
         primaryDiv.empty();
         primaryDiv.html(`<div class="alert alert-warning">${primary.error}</div>`);
@@ -141,7 +152,7 @@ const PIDApp = (() => {
       const divId = `plot-algo-${idx}`;
       const card = $(`
         <div class="card shadow-sm p-3 mb-3 sim-algo-card">
-          <h5 class="mb-3">${METHOD_NAMES[m.method] || m.method}</h5>
+          <h5 class="mb-3">${METHOD_NAMES[m.method] || m.method}${methodHelpIcon(m.method)}</h5>
           <div id="${divId}" style="height:300px;"></div>
           <div class="sim-algo-metrics small text-muted mt-2"></div>
           <div class="sim-algo-coeffs small mt-1 text-muted"></div>
@@ -354,6 +365,13 @@ const PIDApp = (() => {
 
     $("#recalc-btn").on("click", () => recalculate());
     $("#run-sim-btn").on("click", () => recalculate(collectManual()));
+    // Enter в полях коэффициентов запускает симуляцию (как кнопка run-sim)
+    $("#in-kp, #in-ti, #in-td").on("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        recalculate(collectManual());
+      }
+    });
     $("#apply-model-btn").on("click", () => recalculate());
 
     // Быстрый переход к началу/концу страницы
