@@ -1,17 +1,18 @@
 """
 PDF-отчёт (reportlab): титульная часть, таблица параметров и коэффициентов,
 графики, встроенные как PNG (рендер через Matplotlib).
+
+Отчёт включает результаты симуляции по всем методам настройки и сводную
+таблицу с коэффициентами и показателями качества.
 """
 from __future__ import annotations
 
 import io
-
 import os
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import numpy as np
 from flask import session  # noqa: F401 (state передаётся явно)
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -21,9 +22,11 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (Image, PageBreak, Paragraph, SimpleDocTemplate,
                                 Spacer, Table, TableStyle)
 
-from core import pid_tuning, simulator
+from core import simulator
 
-RU_TITLE = "Отчёт по настройке ПИД-регулятора"
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+RU_TITLE = "Расчёт коэффициентов ПИД-регулятора"
 
 # Шрифт с поддержкой кириллицы (DejaVuSans поставляется с matplotlib).
 # Встроенные шрифты reportlab (Helvetica и т.п.) не содержат глифов
@@ -46,6 +49,7 @@ def _register_fonts() -> None:
     addMapping("DejaVuSans", 0, 0, "DejaVuSans")
     addMapping("DejaVuSans", 1, 0, "DejaVuSans-Bold")
     _FONTS_REGISTERED = True
+
 
 METHOD_NAMES = {
     "zn_open": "Зиглер–Николс (разомкнутый контур)",
@@ -85,8 +89,10 @@ def _plot_raw(data) -> io.BytesIO:
 
 def _plot_model(state, data) -> io.BytesIO:
     from core.identification import fopdt_response
-    model_pv = fopdt_response(data.time, data.cv,
-                              state["K"], state["T"], state["tau"])
+    # Отклик считаем от приращения CV и привязываем к начальному PV —
+    # так же, как на веб-странице «Результаты» (иначе модель «уезжает»).
+    model_pv = float(data.pv[0]) + fopdt_response(
+        data.time, data.cv - data.cv[0], state["K"], state["T"], state["tau"])
     fig, ax = plt.subplots(figsize=(7.5, 3.0))
     ax.plot(data.time, data.pv, label="PV (данные)", lw=1)
     ax.plot(data.time, model_pv, "--", label="Модель FOPDT", lw=1.4)
@@ -95,23 +101,74 @@ def _plot_model(state, data) -> io.BytesIO:
     return _fig_to_png(fig)
 
 
-def _plot_sim(state, data) -> io.BytesIO:
-    coeffs = state["coeffs"]; ctype = state.get("ctype", "PID")
-    sim_time = min(max(2.0 * float(data.time[-1] - data.time[0]), 60.0), 3600.0)
-    sim = simulator.simulate_closed_loop(
+def _simulate(state, data, coeffs, ctype, ctx: dict) -> tuple:
+    """Запускает симуляцию по контексту (общему для всех методов)."""
+    return simulator.simulate_closed_loop(
         state["K"], state["T"], state["tau"], ctype,
         coeffs["Kp"], coeffs.get("Ti"), coeffs.get("Td"),
-        dt_sim=max(data.dt / 5.0, 0.01), sim_time=sim_time,
-        sp_array=data.sp)
-    metrics = simulator.quality_metrics(sim[0], sim[1], sim[2])
+        dt_sim=ctx.get("dt_sim", max(data.dt / 5.0, 0.01)),
+        sim_time=ctx.get("sim_time",
+                         min(max(2.0 * float(data.time[-1] - data.time[0]),
+                                 60.0), 3600.0)),
+        sp_array=data.sp,
+        sp_start=ctx.get("sp_start"), sp_target=ctx.get("sp_target"),
+        cv_clip=ctx.get("cv_clip", True), cv_min=ctx.get("cv_min", 0.0),
+        cv_max=ctx.get("cv_max", 100.0),
+        pv0=ctx.get("pv0"), cv0=ctx.get("cv0"))
+
+
+def _plot_sim(sim, metrics=None, title: str = "") -> io.BytesIO:
     fig, ax = plt.subplots(figsize=(7.5, 3.0))
     ax.plot(sim[0], sim[1], label="SP", lw=1)
     ax.plot(sim[0], sim[2], label="PV (модель)", lw=1.4)
     ax.set_xlabel("Время, с"); ax.legend(); ax.grid(alpha=0.3)
-    ax.set_title(f"Перерегулирование: {metrics['overshoot']} %, "
-                 f"время регулирования: {metrics['settling_time']} с")
+    if title:
+        ax.set_title(title)
     fig.tight_layout()
     return _fig_to_png(fig)
+
+
+def _fmt(value, ndigits: int) -> str:
+    if value is None:
+        return "—"
+    try:
+        return f"{float(value):.{ndigits}f}"
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _comparison_table(methods: list) -> Table:
+    """Сводная таблица коэффициентов и качества по всем методам."""
+    head = ["Метод", "Kp", "Ti, с", "Td, с", "Перерег., %",
+            "Время регул., с", "IAE"]
+    rows = [head]
+    for m in methods:
+        if not m.get("coeffs"):
+            name = METHOD_NAMES.get(m["method"], m["method"])
+            rows.append([name, "—", "—", "—", "—", "—", "—"])
+            continue
+        c = m["coeffs"]; mm = m.get("metrics") or {}
+        rows.append([
+            METHOD_NAMES.get(m["method"], m["method"]),
+            _fmt(c.get("Kp"), 4),
+            _fmt(c.get("Ti"), 2) if c.get("Ti") is not None else "—",
+            _fmt(c.get("Td"), 2) if c.get("Td") is not None else "—",
+            _fmt(mm.get("overshoot"), 1),
+            _fmt(mm.get("settling_time"), 1),
+            _fmt(mm.get("iae"), 3),
+        ])
+    t = Table(rows, repeatRows=1, hAlign="LEFT")
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), "#2c3e50"),
+        ("TEXTCOLOR", (0, 0), (-1, 0), "#ffffff"),
+        ("GRID", (0, 0), (-1, -1), 0.5, "#999"),
+        ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1),
+         ["#ffffff", "#f0f7f5"]),
+    ]))
+    return t
 
 
 def build_pdf(state: dict, data) -> io.BytesIO:
@@ -128,11 +185,26 @@ def build_pdf(state: dict, data) -> io.BytesIO:
     title_style = ParagraphStyle("RuTitle", parent=styles["Title"],
                                  fontName="DejaVuSans-Bold")
 
+    # Заголовок и логотип на одной строке; имя файла — под заголовком
+    logo_path = os.path.join(BASE_DIR, "static", "images", "manky.png")
+    _logo = Image(logo_path, width=2.4 * cm, height=2.4 * cm)
+    header = Table(
+        [[Paragraph(RU_TITLE, title_style), _logo],
+         [Paragraph(f"Исходный файл: "
+                    f"<b>{state.get('upload_name', '—')}</b>",
+                    styles["Normal"]), None]],
+        colWidths=[13.5 * cm, 4.5 * cm],
+        rowHeights=[1.3 * cm, 1.1 * cm],
+        style=TableStyle([
+            ("VALIGN", (0, 0), (0, 0), "MIDDLE"),
+            ("VALIGN", (1, 0), (1, 0), "MIDDLE"),
+            ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+            ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+        ]),
+        hAlign="LEFT")
+
     story = [
-        Paragraph(RU_TITLE, title_style),
-        Spacer(1, 12),
-        Paragraph(f"Исходный файл: <b>{state.get('upload_name', '—')}</b>",
-                  styles["Normal"]),
+        header,
         Spacer(1, 18),
     ]
 
@@ -157,7 +229,7 @@ def build_pdf(state: dict, data) -> io.BytesIO:
     story += [Paragraph("Параметры идентифицированной модели FOPDT",
                         styles["Heading2"]), mt, Spacer(1, 14)]
 
-    # Коэффициенты регулятора
+    # Коэффициенты регулятора (выбранный метод)
     coeffs = state["coeffs"]
     method_name = METHOD_NAMES.get(state.get("tuning_method"), "—")
     c_rows = [
@@ -176,18 +248,67 @@ def build_pdf(state: dict, data) -> io.BytesIO:
         ("FONTSIZE", (0, 0), (-1, -1), 9),
         ("TOPPADDING", (0, 0), (-1, -1), 3),
     ]))
-    story += [Paragraph("Коэффициенты ПИД-регулятора", styles["Heading2"]),
-              ct, PageBreak()]
+    story += [Paragraph("Коэффициенты ПИД-регулятора (выбранный метод)",
+                        styles["Heading2"]), ct, PageBreak()]
 
-    # Графики
+    # Контекст симуляции и список методов (для таблицы сравнения и графиков)
+    sim_all = state.get("sim_all")
+    ctype = (sim_all.get("ctype") if sim_all else None) \
+        or state.get("ctype", "PID")
+    ctx = (sim_all.get("ctx") if sim_all else None) or {}
+    methods = list(sim_all["methods"]) if (sim_all and sim_all.get("methods")) \
+        else []
+
+    # Графики исходных данных и модели
     story += [Paragraph("Исходные данные процесса", styles["Heading2"]),
               Image(_plot_raw(data), width=16 * cm, height=6.8 * cm),
               Spacer(1, 10),
               Paragraph("Сравнение данных и модели FOPDT", styles["Heading2"]),
-              Image(_plot_model(state, data), width=16 * cm, height=6.4 * cm),
-              PageBreak(),
-              Paragraph("Симуляция замкнутой системы", styles["Heading2"]),
-              Image(_plot_sim(state, data), width=16 * cm, height=6.4 * cm)]
+              Image(_plot_model(state, data), width=16 * cm, height=6.4 * cm)]
+
+    # Сводная таблица сравнения — сразу после сравнения данных и модели
+    if methods:
+        story.append(Spacer(1, 10))
+        story.append(Paragraph("Сравнение результатов симуляции",
+                               styles["Heading2"]))
+        story.append(_comparison_table(methods))
+    story.append(PageBreak())
+
+    # Результаты симуляции по всем методам (графики)
+    if methods:
+        story.append(Paragraph("Результаты симуляции по методам настройки",
+                               styles["Heading2"]))
+        for m in methods:
+            name = METHOD_NAMES.get(m["method"], m["method"])
+            story.append(Spacer(1, 6))
+            story.append(Paragraph(f"<b>{name}</b>", styles["Normal"]))
+            if m.get("error"):
+                story.append(Paragraph(f"Ошибка расчёта: {m['error']}",
+                                       styles["Normal"]))
+                continue
+            if m.get("coeffs"):
+                sim = _simulate(state, data, m["coeffs"], ctype, ctx)
+                mm = m.get("metrics")
+                title_parts = []
+                if mm:
+                    overshoot = mm.get("overshoot")
+                    settling = mm.get("settling_time")
+                    iae = mm.get("iae")
+                    if overshoot is not None:
+                        title_parts.append(f"Перерегулирование: {overshoot} %")
+                    if settling is not None:
+                        title_parts.append(f"время регулирования: "
+                                           f"{_fmt(settling, 1)} с")
+                    if iae is not None:
+                        title_parts.append(f"IAE: {_fmt(iae, 3)}")
+                story.append(Image(_plot_sim(sim, mm, "; ".join(title_parts)),
+                                   width=15.5 * cm, height=5.8 * cm))
+                story.append(Spacer(1, 4))
+    else:
+        # Фоллбэк: один выбранный метод
+        story += [Paragraph("Симуляция замкнутой системы", styles["Heading2"]),
+                  Image(_plot_sim(_simulate(state, data, coeffs, ctype, ctx)),
+                        width=16 * cm, height=6.4 * cm)]
 
     doc.build(story)
     buf.seek(0)

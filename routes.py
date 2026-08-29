@@ -452,6 +452,36 @@ def register_routes(app: Flask) -> None:
                 },
             })
 
+        # Сохраняем результаты по всем методам (для экспорта PDF/Excel).
+        # Храним только коэффициенты, метрики и контекст симуляции — массивы
+        # графиков в сессию не пишем (куки ограничены ~4 КБ), графики
+        # пересчитываются на лету при экспорте из этого контекста.
+        save_state(
+            sim_all={
+                "ctype": ctype,
+                "ctx": {
+                    "sim_time": ctx["sim_time"],
+                    "dt_sim": ctx["dt_sim"],
+                    "sp_start": ctx["sp_start"],
+                    "sp_target": ctx["sp_target"],
+                    "cv_clip": ctx["cv_clip"],
+                    "cv_min": ctx["cv_min"],
+                    "cv_max": ctx["cv_max"],
+                    "pv0": ctx["pv0"],
+                    "cv0": ctx["cv0"],
+                },
+                "methods": [
+                    {
+                        "method": m["method"],
+                        "coeffs": m.get("coeffs"),
+                        "metrics": m.get("metrics"),
+                        "error": m.get("error"),
+                    }
+                    for m in methods_out
+                ],
+            },
+        )
+
         # Сохраняем состояние выбранного метода (для левой панели)
         sel = next((m for m in methods_out if m["method"] == selected), None)
         quality_warnings = []
