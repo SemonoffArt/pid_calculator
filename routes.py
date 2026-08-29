@@ -208,25 +208,18 @@ def register_routes(app: Flask) -> None:
             app.logger.exception("Ошибка /api/calculate")
             return jsonify({"error": f"Внутренняя ошибка: {exc}"}), 500
 
-    def _api_calculate_impl():
-        payload = request.get_json(silent=True) or {}
-        method = payload.get("method", "zn_open")
-        ctype = payload.get("ctype", "PID")
-        lam = payload.get("lambda")
-        tau_c = payload.get("tau_c")
-        manual = payload.get("manual")  # {"Kp","Ti","Td"} при ручной коррекции
-        # Ручная ступенька задания (в единицах PV) для симуляции
+    def _resolve_sim_context(payload: dict) -> dict:
+        """Разбирает общий контекст (модель + параметры симуляции) из payload."""
+        state = get_state()
+        if not state.get("K"):
+            raise ValueError("Данные не загружены.")
+
         sp_target = _num(payload.get("sp_target"))
         sp_start = _num(payload.get("sp_start"))
-        # Начальная рабочая точка симуляции (из карточки «Параметры симуляции»)
         pv0 = _num(payload.get("pv0"))
         cv0 = _num(payload.get("cv0"))
         use_saturation = bool(payload.get("use_saturation", False))
-        # Время симуляции из карточки «Параметры симуляции» (иначе — авто)
         sim_time_inp = _num(payload.get("sim_time"))
-        # Симметричный предел хода CV. Если задан — CV ограничивается
-        # снизу 0 %, сверху — заданным значением; иначе сохраняется прежнее
-        # поведение (cv_clip + диапазон 0..100 %).
         cv_limit = _num(payload.get("cv_limit"))
         if cv_limit is not None and cv_limit > 0:
             cv_clip = True
@@ -234,10 +227,6 @@ def register_routes(app: Flask) -> None:
         else:
             cv_clip = bool(payload.get("cv_clip", True))
             cv_min, cv_max = 0.0, 100.0
-
-        state = get_state()
-        if not state.get("K"):
-            return jsonify({"error": "Данные не загружены."}), 400
 
         # Ручное редактирование параметров модели FOPDT (опционально)
         model_k = _num(payload.get("model_k"))
@@ -249,16 +238,82 @@ def register_routes(app: Flask) -> None:
             state["T"] = model_t
         if model_tau is not None:
             state["tau"] = model_tau
-        # Сохраняем правки, чтобы они переживали последующие запросы
         save_state(K=state["K"], T=state["T"], tau=state["tau"])
 
-        try:
-            data = _load_processed()
-        except (FileNotFoundError, data_loader.DataError):
-            return jsonify({"error": "Файл данных не найден. "
-                                     "Загрузите файл заново."}), 400
+        data = _load_processed()
         model = identification.FopdtModel(K=state["K"], T=state["T"],
                                           tau=state["tau"])
+
+        data_span = float(data.time[-1] - data.time[0])
+        sim_time = min(max(2.0 * data_span, 60.0), 3600.0)
+        if sim_time_inp is not None and sim_time_inp > 0:
+            sim_time = sim_time_inp
+        if sp_target is not None and sp_start is None:
+            sp_start = float(data.sp[0])
+        dt_sim = max(data.dt / Config.SIM_SUBSTEPS, 0.01)
+
+        return {
+            "state": state, "data": data, "model": model,
+            "cv_clip": cv_clip, "cv_min": cv_min, "cv_max": cv_max,
+            "sim_time": sim_time, "sp_start": sp_start,
+            "sp_target": sp_target, "dt_sim": dt_sim,
+            "pv0": pv0, "cv0": cv0, "use_saturation": use_saturation,
+        }
+
+    def _saturation_limited(coeffs, ctx, ctype) -> dict:
+        """Применяет П3 (учёт насыщения) к коэффициентам, если включён.
+
+        Также обновляет ctx["sp_start"]/ctx["sp_target"] на референсную
+        ступеньку, чтобы основная симуляция совпадала с референсом.
+        """
+        if not ctx["use_saturation"]:
+            return coeffs
+        sp0 = float(ctx["data"].sp[0])
+        ref_span = max(abs(float(ctx["data"].sp[-1]) - sp0), 1.0)
+        sim_start_sp = ctx["sp_start"] if ctx["sp_start"] is not None else sp0
+        sim_target_sp = ctx["sp_target"] if ctx["sp_target"] is not None \
+            else sp0 + ref_span
+        limited = pid_tuning.limit_kp_by_saturation(
+            coeffs, ctx["model"], ctype,
+            sim_start_sp, sim_target_sp,
+            dt_sim=ctx["dt_sim"], sim_time=ctx["sim_time"],
+            max_kp_factor=Config.SATURATION_MAX_KP_FACTOR,
+            step_reduction=Config.SATURATION_STEP_REDUCTION,
+            warn_sat_frac=Config.SATURATION_WARN_FRAC,
+            overshoot_target=Config.SATURATION_OVERSHOOT_TARGET,
+            sp_array=ctx["data"].sp)
+        # Референсная ступенька теперь используется и в основной симуляции
+        ctx["sp_start"], ctx["sp_target"] = sim_start_sp, sim_target_sp
+        return limited
+
+    def _sim_run(ctx, ctype, coeffs) -> tuple:
+        """Запускает симуляцию + метрики для заданных коэффициентов."""
+        sim = simulator.simulate_closed_loop(
+            ctx["model"].K, ctx["model"].T, ctx["model"].tau, ctype,
+            coeffs["Kp"], coeffs["Ti"], coeffs["Td"],
+            dt_sim=ctx["dt_sim"], sim_time=ctx["sim_time"],
+            sp_array=ctx["data"].sp,
+            sp_start=ctx["sp_start"], sp_target=ctx["sp_target"],
+            cv_clip=ctx["cv_clip"], cv_min=ctx["cv_min"], cv_max=ctx["cv_max"],
+            pv0=ctx["pv0"], cv0=ctx["cv0"])
+        metrics = simulator.quality_metrics(sim[0], sim[1], sim[2], sim[3],
+                                            cv_min=ctx["cv_min"],
+                                            cv_max=ctx["cv_max"])
+        return sim, metrics
+
+    def _api_calculate_impl():
+        payload = request.get_json(silent=True) or {}
+        method = payload.get("method", "zn_open")
+        ctype = payload.get("ctype", "PID")
+        lam = payload.get("lambda")
+        tau_c = payload.get("tau_c")
+        manual = payload.get("manual")  # {"Kp","Ti","Td"} при ручной коррекции
+
+        try:
+            ctx = _resolve_sim_context(payload)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        state, data, model = ctx["state"], ctx["data"], ctx["model"]
 
         if manual:
             coeffs = {k: _num(manual.get(k)) for k in ("Kp", "Ti", "Td")}
@@ -276,56 +331,15 @@ def register_routes(app: Flask) -> None:
                 return jsonify({"error": str(exc)}), 400
 
         save_state(coeffs=coeffs, tuning_method=method, ctype=ctype,
-                   sp_target=sp_target, sp_start=sp_start)
+                   sp_target=ctx["sp_target"], sp_start=ctx["sp_start"])
 
-        # Время симуляции: покрывает профиль задания из данных
-        # плюс запас на переходный процесс; либо из карточки параметров
-        data_span = float(data.time[-1] - data.time[0])
-        sim_time = min(max(2.0 * data_span, 60.0), 3600.0)
-        if sim_time_inp is not None and sim_time_inp > 0:
-            sim_time = sim_time_inp
+        # П3: учёт насыщения
+        if not manual:
+            coeffs = _saturation_limited(coeffs, ctx, ctype)
 
-        # Если задана только цель SP — стартуем из начальной рабочей точки
-        # (первое значение задания из данных)
-        if sp_target is not None and sp_start is None:
-            sp_start = float(data.sp[0])
+        save_state(coeffs=coeffs, cv_clip=ctx["cv_clip"])
 
-        dt_sim = max(data.dt / Config.SIM_SUBSTEPS, 0.01)
-
-        # П3: учёт насыщения — автоматически ограничиваем Kp, если
-        # регулятор уходит в упор (флаг «учитывать насыщение»).
-        # Важно: референсная ступенька и сама симуляция должны совпадать,
-        # иначе Kp ограничивается/проверяется по неверному сценарию.
-        if use_saturation and not manual:
-            sp0 = float(data.sp[0])
-            ref_span = max(abs(float(data.sp[-1]) - sp0), 1.0)
-            sim_start_sp = sp_start if sp_start is not None else sp0
-            sim_target_sp = sp_target if sp_target is not None \
-                else sp0 + ref_span
-            coeffs = pid_tuning.limit_kp_by_saturation(
-                coeffs, model, ctype,
-                sim_start_sp, sim_target_sp,
-                dt_sim=dt_sim, sim_time=sim_time,
-                max_kp_factor=Config.SATURATION_MAX_KP_FACTOR,
-                step_reduction=Config.SATURATION_STEP_REDUCTION,
-                warn_sat_frac=Config.SATURATION_WARN_FRAC,
-                overshoot_target=Config.SATURATION_OVERSHOOT_TARGET)
-            # Используем ту же ступеньку в главной симуляции
-            sp_start, sp_target = sim_start_sp, sim_target_sp
-
-        save_state(coeffs=coeffs, cv_clip=cv_clip)
-
-        sim = simulator.simulate_closed_loop(
-            model.K, model.T, model.tau, ctype,
-            coeffs["Kp"], coeffs["Ti"], coeffs["Td"],
-            dt_sim=dt_sim,
-            sim_time=sim_time,
-            sp_array=data.sp,
-            sp_start=sp_start, sp_target=sp_target,
-            cv_clip=cv_clip, cv_min=cv_min, cv_max=cv_max,
-            pv0=pv0, cv0=cv0)
-        metrics = simulator.quality_metrics(sim[0], sim[1], sim[2], sim[3],
-                                            cv_min=cv_min, cv_max=cv_max)
+        sim, metrics = _sim_run(ctx, ctype, coeffs)
 
         # П1: нештатные качества настройки — предупреждения для пользователя
         quality_warnings: list[str] = []
@@ -343,9 +357,6 @@ def register_routes(app: Flask) -> None:
         ctrl = pid_tuning.controllability(model)
 
         # Отклик идентифицированной FOPDT-модели на фактический сигнал CV
-        # — для графика «Модель FOPDT и данные». Как и в identify_curve_fit,
-        # вход берётся в отклонениях от начальной точки, а к отклику
-        # добавляется стартовый уровень PV.
         model_pv = data.pv[0] + identification.fopdt_response(
             data.time, data.cv - data.cv[0], model.K, model.T, model.tau)
 
@@ -371,6 +382,116 @@ def register_routes(app: Flask) -> None:
                 "pv": sim[2].tolist()[::2],
                 "cv": sim[3].tolist()[::2],
             },
+        }
+        return jsonify(_finite(response))
+
+    @app.route("/api/simulate_all", methods=["POST"])
+    def api_simulate_all():
+        """
+        Расчёт симуляции для всех методов настройки (кроме ITAE).
+
+        Принимает тот же JSON, что и /api/calculate (метод, ctype, параметры
+        симуляции, правки модели). Возвращает список методов с
+        коэффициентами, метриками и данными графиков, а также общий контекст
+        (модель, исходные данные, отклик модели, управляемость).
+        """
+        try:
+            return _api_simulate_all_impl()
+        except Exception as exc:
+            app.logger.exception("Ошибка /api/simulate_all")
+            return jsonify({"error": f"Внутренняя ошибка: {exc}"}), 500
+
+    def _api_simulate_all_impl():
+        payload = request.get_json(silent=True) or {}
+        ctype = payload.get("ctype", "PID")
+        lam = payload.get("lambda")
+        tau_c = payload.get("tau_c")
+        selected = payload.get("method", "imc")
+        manual = payload.get("manual")  # ручные коэффициенты для выбранного метода
+
+        try:
+            ctx = _resolve_sim_context(payload)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        state, data, model = ctx["state"], ctx["data"], ctx["model"]
+
+        itae_opt = (
+            lambda m, c, kp0, ti0, td0: identification.optimize_itae(
+                m, c, kp0, ti0, td0))
+
+        methods_out = []
+        for method in pid_tuning.METHODS:
+            if method == "itae":
+                continue
+            # Ручные коэффициенты применимы только к выбранному методу
+            use_manual = bool(manual) and method == selected
+            if use_manual:
+                coeffs = {k: _num(manual.get(k)) for k in ("Kp", "Ti", "Td")}
+            else:
+                try:
+                    coeffs = pid_tuning.tune(method, model, ctype,
+                                             ku=state.get("Ku"),
+                                             tu=state.get("Tu"), lam=lam,
+                                             tau_c=tau_c,
+                                             itae_optimizer=itae_opt)
+                except ValueError as exc:
+                    methods_out.append({"method": method, "error": str(exc)})
+                    continue
+            if not use_manual:
+                coeffs = _saturation_limited(coeffs, ctx, ctype)
+            sim, metrics = _sim_run(ctx, ctype, coeffs)
+            methods_out.append({
+                "method": method,
+                "coeffs": coeffs,
+                "metrics": metrics,
+                "sim": {
+                    "time": sim[0].tolist()[::2],
+                    "sp": sim[1].tolist()[::2],
+                    "pv": sim[2].tolist()[::2],
+                    "cv": sim[3].tolist()[::2],
+                },
+            })
+
+        # Сохраняем состояние выбранного метода (для левой панели)
+        sel = next((m for m in methods_out if m["method"] == selected), None)
+        quality_warnings = []
+        if sel and "coeffs" in sel:
+            save_state(coeffs=sel["coeffs"], tuning_method=selected,
+                       ctype=ctype, cv_clip=ctx["cv_clip"],
+                       sp_target=ctx["sp_target"], sp_start=ctx["sp_start"])
+            qm = sel["metrics"]
+            if qm["overshoot"] > Config.OVERSHOOT_WARN_THRESHOLD:
+                quality_warnings.append(
+                    f"Перерегулирование {qm['overshoot']:.0f} % — контур "
+                    "раскачивается. Снизьте Kp или выберите CHR/IMC/ITAE.")
+            if qm["sat_frac"] > Config.SATURATION_WARN_FRAC:
+                quality_warnings.append(
+                    f"Регулятор работает в насыщении "
+                    f"({qm['sat_frac'] * 100:.0f} % времени, ход до "
+                    f"{qm['cv_max']:.0f} %) — снизьте Kp для линейного режима.")
+
+        # Общий контекст (модель, сырые данные, отклик модели, управляемость)
+        ctrl = pid_tuning.controllability(model)
+        model_pv = data.pv[0] + identification.fopdt_response(
+            data.time, data.cv - data.cv[0], model.K, model.T, model.tau)
+
+        response = {
+            "method": selected,
+            "ctype": ctype,
+            "controlability": ctrl,
+            "model": {"K": state["K"], "T": state["T"], "tau": state["tau"],
+                      "Ku": state.get("Ku"), "Tu": state.get("Tu")},
+            "warnings": state.get("warnings", []),
+            "quality_warnings": quality_warnings,
+            "raw": {
+                "time": data.time.tolist(), "pv": data.pv.tolist(),
+                "sp": data.sp.tolist(), "cv": data.cv.tolist(),
+            },
+            "model_response": {
+                "time": data.time.tolist(),
+                "pv": model_pv.tolist(),
+            },
+            "methods": methods_out,
         }
         return jsonify(_finite(response))
 

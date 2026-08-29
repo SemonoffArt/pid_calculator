@@ -247,7 +247,8 @@ def limit_kp_by_saturation(coeffs: dict, model: FopdtModel, ctype: str,
                            max_kp_factor: float = 0.1,
                            step_reduction: float = 0.9,
                            warn_sat_frac: float = 0.05,
-                           overshoot_target: float = 30.0) -> dict:
+                           overshoot_target: float = 30.0,
+                           sp_array: np.ndarray | None = None) -> dict:
     """
     Смягчает слишком агрессивный Kp, пока отклик не станет приемлемым.
 
@@ -256,6 +257,8 @@ def limit_kp_by_saturation(coeffs: dict, model: FopdtModel, ctype: str,
       - регулятор уходит в упор (доля времени насыщения > warn_sat_frac);
       - перерегулирование превышает overshoot_target.
     Ограничение снизу — max_kp_factor доли от исходного Kp (защита от нуля).
+    sp_array — профиль задания из данных (если нет явной ступеньки
+    sp_start/sp_target), чтобы референс совпадал с основной симуляцией.
     Возвращает коэффициенты с флагом `saturation_limited`.
     """
     from core import simulator
@@ -270,6 +273,7 @@ def limit_kp_by_saturation(coeffs: dict, model: FopdtModel, ctype: str,
             model.K, model.T, model.tau, ctype, kp,
             coeffs.get("Ti"), coeffs.get("Td"),
             dt_sim=dt_sim, sim_time=sim_time,
+            sp_array=sp_array,
             sp_start=sp_start, sp_target=sp_target)
         return simulator.quality_metrics(t, sp, pv, cv)
 

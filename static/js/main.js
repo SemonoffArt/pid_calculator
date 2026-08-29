@@ -20,11 +20,11 @@ const PIDApp = (() => {
     zn_open: "Зиглер–Николс по разомкнутой характеристике (K, T, τ). "
       + "Quarter-decay ratio: каждое следующее перерегулирование в 4 раза "
       + "меньше. Перерегулирование ~25–50 %, агрессивная настройка. "
-      + "Для FOPDT с L/T = 0,1…1; не годится, где перерегулирование опасно.",
+      + "Для FOPDT с τ/T = 0,1…1; не годится, где перерегулирование опасно.",
     zn_closed: "Зиглер–Николс по критическим параметрам Ku/Tu (замкнутый "
       + "контур). Требует записи автоколебаний (релейный тест или модель).",
     cohen: "Cohen–Coon (1953). Улучшение ЗН для больших запаздываний "
-      + "(L/T > 0,3): длинные транспортёры, теплообменники с трубопроводами, "
+      + "(τ/T > 0,3): длинные транспортёры, теплообменники с трубопроводами, "
       + "аналитические измерения с лабораторной задержкой.",
     chr_sp0: "CHR servo, 0 % — отслеживание уставки без перерегулирования. "
       + "Бэтч-процессы, смена режимов, где перерегулирование недопустимо.",
@@ -37,7 +37,7 @@ const PIDApp = (() => {
     imc: "Internal Model Control (IMC, 1986). Аналитический метод; параметр λ "
       + "задаёт компромисс скорость/робастность. По умолчанию λ = max(T, τ).",
     simc: "SIMC (Skogestad, 2003). Уточнённый IMC; τc = τ по умолчанию — "
-      + "баланс скорости и робастности для широкого диапазона L/T.",
+      + "баланс скорости и робастности для широкого диапазона τ/T.",
     amigo: "AMIGO (Åström–Hägglund, 2004). Оптимизирован по IAE при Ms ≤ 1,4. "
       + "Робастен к ошибкам модели — для неточной модели или меняющегося объекта.",
     itae: "Оптимизация ITAE — численная минимизация интеграла (Нелдер–Мид от "
@@ -69,8 +69,8 @@ const PIDApp = (() => {
                                 xaxis: { title: "Время, с" } }, layout), cfg);
   }
 
-  function drawSim(sim) {
-    Plotly.react("plot-sim", [
+  function drawSimTo(divId, sim) {
+    Plotly.react(divId, [
       { x: sim.time, y: sim.sp, name: "SP (задание)", mode: "lines",
         line: { color: "#e74c3c" } },
       { x: sim.time, y: sim.pv, name: "PV (модель)", mode: "lines",
@@ -81,14 +81,115 @@ const PIDApp = (() => {
                        xaxis: { title: "Время, с" } }, layout), cfg);
   }
 
+  // Названия методов для заголовков карточек и таблицы
+  const METHOD_NAMES = {
+    zn_open: "Зиглер–Николс (разомкнутый)",
+    zn_closed: "Зиглер–Николс (замкнутый)",
+    cohen: "Cohen–Coon (1953)",
+    chr_sp0: "Чен–Хрон: уставка, 0 %",
+    chr_sp20: "Чен–Хрон: уставка, 20 %",
+    chr_ds0: "Чен–Хрон: возмущение, 0 %",
+    chr_ds20: "Чен–Хрон: возмущение, 20 %",
+    imc: "Внутренняя модель (IMC)",
+    simc: "SIMC (Skogestad, 2003)",
+    amigo: "AMIGO (Åström–Hägglund)",
+    itae: "Оптимизация ITAE",
+  };
+
+  function metricsLine(m) {
+    let satTxt = "";
+    if (m.sat_frac != null && m.sat_frac > 0.05) {
+      satTxt = `, <span class="text-danger">насыщение ${(m.sat_frac * 100).toFixed(0)} %</span>`;
+    }
+    return `Перерегулирование: <b>${m.overshoot} %</b>, ` +
+      `время регулирования: <b>${fmt(m.settling_time, 1)} с</b>, ` +
+      `IAE: <b>${m.iae}</b>${satTxt}`;
+  }
+
+  function coeffsLine(c) {
+    let s = `Kp = <b>${fmt(c.Kp)}</b>`;
+    if (c.Ti != null) s += `, Ti = <b>${fmt(c.Ti, 2)} с</b>`;
+    if (c.Td != null) s += `, Td = <b>${fmt(c.Td, 2)} с</b>`;
+    return s;
+  }
+
+  // Основная плавающая карточка (выбранный метод) + карточки остальных
+  function renderAllSims(data) {
+    const methods = data.methods || [];
+    const primary = methods.find(m => m.method === data.method) || methods[0];
+    const others = methods.filter(m => m !== primary);
+
+    // -- основная карточка
+    const primaryDiv = $("#plot-sim-primary");
+    if (primary && primary.sim) {
+      $("#sim-primary-title").text(METHOD_NAMES[primary.method] || primary.method);
+      if (primary.error) {
+        primaryDiv.empty();
+        primaryDiv.html(`<div class="alert alert-warning">${primary.error}</div>`);
+      } else {
+        drawSimTo("plot-sim-primary", primary.sim);
+        $("#sim-primary-metrics").html(metricsLine(primary.metrics));
+        $("#sim-primary-coeffs").html(coeffsLine(primary.coeffs));
+      }
+    }
+
+    // -- карточки остальных методов
+    const container = $("#sim-others");
+    container.empty();
+    // Создаём контейнеры Plotly заранее, затем заполняем
+    others.forEach((m, idx) => {
+      const divId = `plot-algo-${idx}`;
+      const card = $(`
+        <div class="card shadow-sm p-3 mb-3 sim-algo-card">
+          <h5 class="mb-3">${METHOD_NAMES[m.method] || m.method}</h5>
+          <div id="${divId}" style="height:300px;"></div>
+          <div class="sim-algo-metrics small text-muted mt-2"></div>
+          <div class="sim-algo-coeffs small mt-1 text-muted"></div>
+        </div>`);
+      container.append(card);
+      if (m.error) {
+        $(`#${divId}`).html(`<div class="alert alert-warning">${m.error}</div>`);
+      } else {
+        drawSimTo(divId, m.sim);
+        card.find(".sim-algo-metrics").html(metricsLine(m.metrics));
+        card.find(".sim-algo-coeffs").html(coeffsLine(m.coeffs));
+      }
+    });
+
+    // -- сравнительная таблица
+    const tbody = $("#sim-compare-table tbody");
+    tbody.empty();
+    methods.filter(m => !m.error).forEach(m => {
+      const mm = m.metrics;
+      tbody.append(
+        `<tr>
+          <td>${METHOD_NAMES[m.method] || m.method}</td>
+          <td>${fmt(m.coeffs.Kp)}</td>
+          <td>${m.coeffs.Ti != null ? fmt(m.coeffs.Ti, 2) : "—"}</td>
+          <td>${m.coeffs.Td != null ? fmt(m.coeffs.Td, 2) : "—"}</td>
+          <td>${mm.overshoot}</td>
+          <td>${fmt(mm.settling_time, 1)}</td>
+          <td>${mm.iae}</td>
+        </tr>`);
+    });
+  }
+
   function fmt(v, d = 4) {
     return v === null || v === undefined ? "—" : Number(v).toFixed(d);
   }
 
   function updateCoeffs(data) {
-    $("#in-kp").val(data.coeffs.Kp != null ? fmt(data.coeffs.Kp) : "");
-    $("#in-ti").val(data.coeffs.Ti != null ? fmt(data.coeffs.Ti, 2) : "");
-    $("#in-td").val(data.coeffs.Td != null ? fmt(data.coeffs.Td, 2) : "");
+    // Выбранный метод: берём из списка methods
+    const sel = (data.methods || []).find(m => m.method === data.method)
+      || (data.methods && data.methods[0]);
+    const coeffs = sel && sel.coeffs ? sel.coeffs : null;
+    const metrics = sel && sel.metrics ? sel.metrics : null;
+
+    if (coeffs) {
+      $("#in-kp").val(coeffs.Kp != null ? fmt(coeffs.Kp) : "");
+      $("#in-ti").val(coeffs.Ti != null ? fmt(coeffs.Ti, 2) : "");
+      $("#in-td").val(coeffs.Td != null ? fmt(coeffs.Td, 2) : "");
+    }
 
     if (data.model) {
       $("#model-K").val(fmt(data.model.K));
@@ -106,21 +207,13 @@ const PIDApp = (() => {
       $("#model-ctrl-hint").text(c.hints.join("; "));
       $("#model-ctrl-hint-row").show();
     }
-    if (data.coeffs && data.coeffs.saturation_limited) {
+    if (coeffs && coeffs.saturation_limited) {
       $("#model-ctrl-hint").prepend("Kp ограничен из-за насыщения. ");
     }
 
-    // П1: предупреждения о качестве настройки + метрики
-    const m = data.metrics;
-    if (m) {
-      let satTxt = "";
-      if (m.sat_frac != null && m.sat_frac > 0.05) {
-        satTxt = `, <span class="text-danger">насыщение ${(m.sat_frac * 100).toFixed(0)} %</span>`;
-      }
-      $("#metrics-box").html(
-        `Перерегулирование: <b>${m.overshoot} %</b>, ` +
-        `время регулирования: <b>${fmt(m.settling_time, 1)} с</b>, ` +
-        `IAE: <b>${m.iae}</b>${satTxt}`);
+    // П1: метрики выбранного метода + предупреждения
+    if (metrics) {
+      $("#metrics-box").html(metricsLine(metrics));
     }
     if (data.quality_warnings && data.quality_warnings.length) {
       $("#quality-warnings").empty();
@@ -185,7 +278,7 @@ const PIDApp = (() => {
 
     setBusy(true);
     $.ajax({
-      url: "/api/calculate",
+      url: "/api/simulate_all",
       method: "POST",
       contentType: "application/json",
       data: JSON.stringify(payload),
@@ -194,7 +287,7 @@ const PIDApp = (() => {
         if (data.error) { alert("Ошибка: " + data.error); return; }
         drawRaw(data.raw);
         drawModel(data.model_response, data.raw);
-        drawSim(data.sim);
+        renderAllSims(data);
         updateCoeffs(data);
       })
       .fail((xhr) => {

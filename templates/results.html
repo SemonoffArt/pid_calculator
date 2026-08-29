@@ -229,9 +229,33 @@
       <h5>Модель FOPDT и данные</h5>
       <div id="plot-model" style="height:300px;"></div>
     </div>
+
+    <!-- Основная карточка: выбранный алгоритм -->
+    <div class="card shadow-sm p-3 mb-3" id="sim-primary-card">
+      <h5 class="mb-3">Симуляция замкнутой системы — <span id="sim-primary-title">…</span>
+        <span class="badge text-bg-primary">выбранный</span></h5>
+      <div id="plot-sim-primary" style="height:320px;"></div>
+      <div id="sim-primary-metrics" class="small text-muted mt-2"></div>
+      <div id="sim-primary-coeffs" class="small mt-1 text-muted"></div>
+    </div>
+
+    <!-- Карточки остальных алгоритмов -->
+    <div id="sim-others"></div>
+
+    <!-- Сравнительная таблица -->
     <div class="card shadow-sm p-3 mb-3">
-      <h5>Симуляция замкнутой системы</h5>
-      <div id="plot-sim" style="height:320px;"></div>
+      <h5 class="mb-3">Сравнение результатов симуляции</h5>
+      <div class="table-responsive">
+        <table class="table table-sm table-striped" id="sim-compare-table">
+          <thead>
+            <tr>
+              <th>Метод</th><th>Kp</th><th>Ti, с</th><th>Td, с</th>
+              <th>Перерегул., %</th><th>Время регул., с</th><th>IAE</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
     </div>
 
     {% include "_reference.html" %}
