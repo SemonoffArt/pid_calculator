@@ -42,6 +42,14 @@
   <span id="app-version">v{{ config.VERSION if config.VERSION else '?' }}</span>
 </footer>
 
+<!-- Быстрый переход к началу/концу страницы -->
+<div class="scroll-float">
+  <button type="button" class="btn btn-primary scroll-btn" id="scroll-top"
+          title="К началу страницы" aria-label="К началу страницы">▲</button>
+  <button type="button" class="btn btn-primary scroll-btn" id="scroll-bottom"
+          title="К концу страницы" aria-label="К концу страницы">▼</button>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>

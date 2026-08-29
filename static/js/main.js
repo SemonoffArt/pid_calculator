@@ -325,6 +325,11 @@ const PIDApp = (() => {
     $("#run-sim-btn").on("click", () => recalculate(collectManual()));
     $("#apply-model-btn").on("click", () => recalculate());
 
+    // Быстрый переход к началу/концу страницы
+    $("#scroll-top").on("click", () => $("html, body").animate({ scrollTop: 0 }, 300));
+    $("#scroll-bottom").on("click", () =>
+      $("html, body").animate({ scrollTop: $(document).height() }, 300));
+
     // Подсказки-вопросики у полей (делегирование — работает для всех карточек)
     if (window.bootstrap && window.bootstrap.Tooltip) {
       new bootstrap.Tooltip(document.body, {

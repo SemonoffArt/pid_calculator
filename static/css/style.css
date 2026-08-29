@@ -297,3 +297,26 @@ footer {
 
 /* Больше отступ между именем параметра и его значением */
 .card .table td { padding-left: 1.25rem; }
+
+/* Плавающие кнопки перехода к началу/концу страницы */
+.scroll-float {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  z-index: 1050;
+}
+.scroll-btn {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  padding: 0;
+  line-height: 1;
+  box-shadow: 0 2px 8px rgba(0,0,0,.2);
+}
