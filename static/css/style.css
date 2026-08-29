@@ -320,3 +320,12 @@ footer {
   line-height: 1;
   box-shadow: 0 2px 8px rgba(0,0,0,.2);
 }
+
+/* Сортируемые заголовки таблицы сравнения */
+#sim-compare-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+#sim-compare-table th.sortable:hover { background-color: #18bc9c; }
+.sort-arrow { font-size: 0.7rem; }

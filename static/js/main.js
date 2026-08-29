@@ -157,9 +157,20 @@ const PIDApp = (() => {
     });
 
     // -- сравнительная таблица
+    renderCompareTable(methods);
+  }
+
+  // Состояние сортировки таблицы сравнения
+  let sortKey = null;        // "iae" | "overshoot" | ...
+  let sortDir = 1;           // 1 - по возрастанию, -1 - по убыванию
+  let tableMethods = [];
+
+  function renderCompareTable(methods) {
+    tableMethods = methods.filter(m => !m.error);
     const tbody = $("#sim-compare-table tbody");
     tbody.empty();
-    methods.filter(m => !m.error).forEach(m => {
+    const rows = sortKey ? sortRows(tableMethods) : tableMethods;
+    rows.forEach(m => {
       const mm = m.metrics;
       tbody.append(
         `<tr>
@@ -172,6 +183,26 @@ const PIDApp = (() => {
           <td>${mm.iae}</td>
         </tr>`);
     });
+    updateSortArrows();
+  }
+
+  function sortRows(methods) {
+    return methods.slice().sort((a, b) => {
+      const av = a.metrics[sortKey];
+      const bv = b.metrics[sortKey];
+      if (av === bv) return 0;
+      if (av == null) return 1;    // null/undefined — в конец
+      if (bv == null) return -1;
+      return (av - bv) * sortDir;
+    });
+  }
+
+  function updateSortArrows() {
+    $(".sortable .sort-arrow").text("");
+    if (sortKey) {
+      const el = $(`.sortable[data-key="${sortKey}"] .sort-arrow`);
+      el.text(sortDir === 1 ? "▲" : "▼");
+    }
   }
 
   function fmt(v, d = 4) {
@@ -329,6 +360,18 @@ const PIDApp = (() => {
     $("#scroll-top").on("click", () => $("html, body").animate({ scrollTop: 0 }, 300));
     $("#scroll-bottom").on("click", () =>
       $("html, body").animate({ scrollTop: $(document).height() }, 300));
+
+    // Сортировка таблицы сравнения по колонкам IAE / Перерегулирование
+    $("#sim-compare-table").on("click", "th.sortable", function () {
+      const key = $(this).data("key");
+      if (sortKey === key) {
+        sortDir = -sortDir;
+      } else {
+        sortKey = key;
+        sortDir = 1;   // по возрастанию (лучшее значение сверху)
+      }
+      renderCompareTable(tableMethods);
+    });
 
     // Подсказки-вопросики у полей (делегирование — работает для всех карточек)
     if (window.bootstrap && window.bootstrap.Tooltip) {
