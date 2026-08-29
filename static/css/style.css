@@ -194,6 +194,10 @@ legend {
     background-color: #4fc3f7 !important;
     color: #ffffff !important;
 }
+.badge.text-bg-primary {
+    background-color: #2c3e50 !important;
+    color: #ecf0f1 !important;
+}
 .spinner-border.text-primary {
     color: #18bc9c !important;
 }
@@ -292,8 +296,20 @@ footer {
   text-align: left;
 }
 
-/* Имя параметра и значок-подсказка всегда на одной строке */
+/* Имя параметра и значок-подсказки остаются на одной строке, но не
+   выталкивают таблицу за пределы узкой карточки (П3: «Управляемость») */
 .card .table th { white-space: nowrap; }
+
+/* Карточка «Параметры модели FOPDT» — фиксированная ширина колонок,
+   перенос длинных значений (бейдж управляемости и т.п.) внутри ячейки */
+#model-params-table { table-layout: fixed; }
+#model-params-table th,
+#model-params-table td {
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
+#model-params-table td .badge { white-space: normal; }
 
 /* Больше отступ между именем параметра и его значением */
 .card .table td { padding-left: 1.25rem; }
