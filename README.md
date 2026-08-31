@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="static/images/img1.png" alt="PID Calculator" width="100%">
-</p>
+
 
 <h1 align="center">PID Calculator</h1>
 
@@ -15,6 +13,9 @@
   <img src="https://img.shields.io/badge/flask-3.0-red" alt="Flask">
 </p>
 
+<p align="center">
+  <img src="static/images/img1.png" alt="PID Calculator" width="100%">
+</p>
 ---
 
 ## Описание
