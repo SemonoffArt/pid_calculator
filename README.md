@@ -16,6 +16,7 @@
 <p align="center">
   <img src="static/images/img1.png" alt="PID Calculator" width="100%">
 </p>
+
 ---
 
 ## Описание
@@ -150,4 +151,4 @@ MIT License — см. [LICENSE](LICENSE)
 
 ## Автор
 
-**Artjom Saymon Semonoff**
+**Артемий "7Art" Семёнов** — [GitHub](https://github.com/SemonoffArt)
