@@ -15,6 +15,9 @@ const PIDApp = (() => {
   };
   const cfg = { responsive: true, locale: "ru" };
 
+  // Текущий тип модели (FOPDT / IPDT) — переключается на странице результатов
+  let currentModelType = "fopdt";
+
   // Описания методов настройки — для подсказки «Метод настройки»
   const METHOD_HELP = {
     zn_open: "Зиглер–Николс по разомкнутой характеристике (K, T, τ). "
@@ -58,10 +61,12 @@ const PIDApp = (() => {
   }
 
   function drawModel(mr, raw) {
+    const label = currentModelType === "ipdt"
+      ? "PV (модель IPDT)" : "PV (модель FOPDT)";
     const traces = [
       { x: raw.time, y: raw.pv, name: "PV (данные)", mode: "lines",
         line: { color: "#2c3e50" } },
-      { x: mr.time, y: mr.pv, name: "PV (модель FOPDT)", mode: "lines",
+      { x: mr.time, y: mr.pv, name: label, mode: "lines",
         line: { color: "#18bc9c", dash: "dash", width: 2 } },
     ];
     Plotly.react("plot-model", traces,
@@ -234,9 +239,13 @@ const PIDApp = (() => {
     }
 
     if (data.model) {
+      currentModelType = data.model.type || currentModelType;
+      $("#model-chart-title").text(currentModelType === "ipdt" ? "IPDT" : "FOPDT");
       $("#model-K").val(fmt(data.model.K));
       $("#model-T").val(fmt(data.model.T, 2));
+      $("#model-Ka").val(fmt(data.model.Ka));
       $("#model-tau").val(fmt(data.model.tau, 2));
+      setModelType(currentModelType);
     }
 
     // П2: оценка управляемости объекта
@@ -244,8 +253,10 @@ const PIDApp = (() => {
       const c = data.controlability;
       const badge = c.level === "difficult" ? "#e74c3c"
         : c.level === "moderate" ? "#f39c12" : "#18bc9c";
+      const ratioLabel = currentModelType === "ipdt"
+        ? `(τ=${c.ratio} с)` : `(τ/T=${c.ratio})`;
       $("#model-ctrl").html(
-        `<span class="badge" style="background-color:${badge};">${c.label} (τ/T=${c.ratio})</span>`);
+        `<span class="badge" style="background-color:${badge};">${c.label} ${ratioLabel}</span>`);
       $("#model-ctrl-hint").text(c.hints.join("; "));
       $("#model-ctrl-hint-row").show();
     }
@@ -273,6 +284,34 @@ const PIDApp = (() => {
     $("#recalc-btn, #run-sim-btn").prop("disabled", busy);
   }
 
+  // Переключение типа модели: поля, методы, заголовки графиков
+  function setModelType(mt) {
+    currentModelType = mt === "ipdt" ? "ipdt" : "fopdt";
+    // Поля параметров модели
+    $("#fopdt-K-row, #fopdt-T-row").toggle(currentModelType === "fopdt");
+    $("#ipdt-Ka-row").toggle(currentModelType === "ipdt");
+    // Фильтрация списка методов по применимости
+    $("#method option").each(function () {
+      const applicable = currentModelType === "ipdt"
+        ? (this.dataset.ipdt === "1") : true;
+      this.hidden = !applicable;
+      this.style.display = applicable ? "" : "none";
+    });
+    // Если выбранный метод недоступен — выбираем первый доступный
+    const sel = $("#method").val();
+    const selOk = $("#method option").filter(function () {
+      return this.value === sel && this.style.display !== "none";
+    }).length > 0;
+    if (!selOk) {
+      const first = $("#method option").filter(function () {
+        return this.style.display !== "none";
+      }).first();
+      if (first.length) $("#method").val(first.val());
+    }
+    $("#method").trigger("change");
+    $("#model-chart-title").text(currentModelType === "ipdt" ? "IPDT" : "FOPDT");
+  }
+
   function collectManual() {
     return {
       manual: {
@@ -290,11 +329,20 @@ const PIDApp = (() => {
     payload.lambda = parseFloat($("#lambda-input").val()) || null;
     payload.tau_c = parseFloat($("#tau_c-input").val()) || null;
     payload.use_saturation = $("#use-saturation").is(":checked");
-    // Ручное редактирование параметров модели FOPDT (если заданы)
-    const mK = parseFloat($("#model-K").val());
-    payload.model_k = isFinite(mK) ? mK : null;
-    const mT = parseFloat($("#model-T").val());
-    payload.model_t = isFinite(mT) ? mT : null;
+    payload.model_type = currentModelType;
+    // Ручное редактирование параметров модели (в зависимости от типа)
+    if (currentModelType === "ipdt") {
+      const mKa = parseFloat($("#model-Ka").val());
+      payload.model_ka = isFinite(mKa) ? mKa : null;
+      delete payload.model_t;
+      delete payload.model_k;
+    } else {
+      const mK = parseFloat($("#model-K").val());
+      payload.model_k = isFinite(mK) ? mK : null;
+      const mT = parseFloat($("#model-T").val());
+      payload.model_t = isFinite(mT) ? mT : null;
+      delete payload.model_ka;
+    }
     const mTau = parseFloat($("#model-tau").val());
     payload.model_tau = isFinite(mTau) ? mTau : null;
     // Диапазон хода CV из карточки «Параметры симуляции»
@@ -365,6 +413,36 @@ const PIDApp = (() => {
 
     $("#recalc-btn").on("click", () => recalculate());
     $("#run-sim-btn").on("click", () => recalculate(collectManual()));
+    // Смена типа модели: повторная идентификация + пересчёт
+    $("#model-type").on("change", function () {
+      const mt = $(this).val() === "ipdt" ? "ipdt" : "fopdt";
+      setBusy(true);
+      $.ajax({
+        url: "/api/reidentify",
+        method: "POST",
+        contentType: "application/json",
+        data: JSON.stringify({ model_type: mt, mode: "auto" }),
+      })
+        .done((r) => {
+          if (r.error) { alert("Ошибка: " + r.error); setBusy(false); return; }
+          setModelType(mt);
+          // Обновляем поля идентифицированными параметрами
+          if (r.model_type === "ipdt") {
+            $("#model-Ka").val(fmt(r.Ka));
+          } else {
+            $("#model-K").val(fmt(r.K));
+            $("#model-T").val(fmt(r.T, 2));
+          }
+          $("#model-tau").val(fmt(r.tau, 2));
+          recalculate();
+        })
+        .fail((xhr) => {
+          const msg = xhr.responseJSON && xhr.responseJSON.error
+            ? xhr.responseJSON.error : "Ошибка идентификации.";
+          alert(msg);
+          setBusy(false);
+        });
+    });
     // Enter в полях коэффициентов запускает симуляцию (как кнопка run-sim)
     $("#in-kp, #in-ti, #in-td").on("keydown", (e) => {
       if (e.key === "Enter") {
@@ -400,6 +478,10 @@ const PIDApp = (() => {
     }
     updateMethodTip();
 
+    // Инициализация типа модели из серверного состояния (только результаты)
+    if ($("#model-type").length) {
+      setModelType($("#model-type").val());
+    }
   });
 
   return { recalculate };

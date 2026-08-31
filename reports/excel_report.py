@@ -44,12 +44,21 @@ def build_excel(state: dict, data) -> io.BytesIO:
     # -------------------------------------- Лист 2: параметры и коэффициенты
     ws2 = wb.create_sheet("Параметры")
     ws2.append(["Параметр", "Значение"])
-    rows = [
-        ("Исходный файл", state.get("upload_name", "—")),
-        ("K (коэффициент усиления)", round(state["K"], 6)),
-        ("T (постоянная времени), с", round(state["T"], 4)),
-        ("tau (запаздывание), с", round(state["tau"], 4)),
-    ]
+    if state.get("model_type") == "ipdt":
+        rows = [
+            ("Исходный файл", state.get("upload_name", "—")),
+            ("Тип модели", "IPDT — интегрирующее звено"),
+            ("Ka (интегральное усиление), 1/с", round(state["Ka"], 6)),
+            ("tau (запаздывание), с", round(state["tau"], 4)),
+        ]
+    else:
+        rows = [
+            ("Исходный файл", state.get("upload_name", "—")),
+            ("Тип модели", "FOPDT — апериодическое звено"),
+            ("K (коэффициент усиления)", round(state["K"], 6)),
+            ("T (постоянная времени), с", round(state["T"], 4)),
+            ("tau (запаздывание), с", round(state["tau"], 4)),
+        ]
     if state.get("Ku"):
         rows.append(("Ku (критическое усиление)", round(state["Ku"], 5)))
         rows.append(("Tu (период автоколебаний), с", round(state["Tu"], 4)))
@@ -85,10 +94,14 @@ def simulator_run(state, data):
     """Запуск симуляции для листа отчёта."""
     from core import simulator
     coeffs = state["coeffs"]
+    mt = state.get("model_type", "fopdt")
+    is_ipdt = mt == "ipdt"
     sim_time = min(max(2.0 * float(data.time[-1] - data.time[0]), 60.0), 3600.0)
     sim = simulator.simulate_closed_loop(
-        state["K"], state["T"], state["tau"], state.get("ctype", "PID"),
+        (state.get("K", 0.0) if not is_ipdt else 0.0),
+        (state.get("T", 0.0) if not is_ipdt else 0.0),
+        state.get("tau", 0.0), state.get("ctype", "PID"),
         coeffs["Kp"], coeffs.get("Ti"), coeffs.get("Td"),
         dt_sim=max(data.dt / 5.0, 0.01), sim_time=sim_time,
-        sp_array=data.sp)
+        sp_array=data.sp, model_type=mt, Ka=state.get("Ka"))
     return sim

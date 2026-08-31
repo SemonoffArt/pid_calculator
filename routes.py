@@ -123,12 +123,16 @@ def register_routes(app: Flask) -> None:
         clear_state()
         path = save_dataframe(processed.to_frame(),
                               app.config["UPLOAD_FOLDER"], file.filename)
+        model_type = request.form.get("model_type", "fopdt")
+        if model_type not in ("fopdt", "ipdt"):
+            model_type = "fopdt"
         save_state(
             data_path=path,
             upload_name=file.filename,
             interp_step=interp_step,
             filter_window=filter_window,
             id_mode=request.form.get("id_mode", "auto"),
+            model_type=model_type,
             normalized=bool(normalize),
             norm_scale=norm_scale,
         )
@@ -153,19 +157,34 @@ def register_routes(app: Flask) -> None:
         return data_loader.preprocess(df, state.get("interp_step"),
                                       state.get("filter_window", 5))
 
+    def _model_type() -> str:
+        """Текущий тип модели из состояния (по умолчанию FOPDT)."""
+        tid = get_state().get("model_type", "fopdt")
+        return tid if tid in ("fopdt", "ipdt") else "fopdt"
+
     def _identify_and_store(app_: Flask) -> dict:
         """Идентификация + сохранение модели в сессию. Возвращает результат."""
         data = _load_processed()
-        res = identification.identify(data, get_state().get("id_mode", "auto"))
+        mt = _model_type()
+        res = identification.identify(data, get_state().get("id_mode", "auto"),
+                                      model_type=mt)
         model = res["model"]
         # ВНИМАНИЕ: массивы данных в сессию не сохраняем — браузеры
         # отбрасывают куки больше 4 КБ. Данные читаются из uploads/.
-        save_state(
-            K=model.K, T=model.T, tau=model.tau,
-            fit_quality=model.fit_quality, Ku=res.get("Ku"), Tu=res.get("Tu"),
-            method_used=model.method, warnings=res.get("warnings", []),
-            pv_span=data.info.get("pv_span", [None, None]),
-        )
+        if mt == "ipdt":
+            save_state(
+                model_type="ipdt", Ka=model.Ka, tau=model.tau, m0=model.m0,
+                fit_quality=model.fit_quality, Ku=res.get("Ku"), Tu=res.get("Tu"),
+                method_used=model.method, warnings=res.get("warnings", []),
+                pv_span=data.info.get("pv_span", [None, None]),
+            )
+        else:
+            save_state(
+                model_type="fopdt", K=model.K, T=model.T, tau=model.tau,
+                fit_quality=model.fit_quality, Ku=res.get("Ku"), Tu=res.get("Tu"),
+                method_used=model.method, warnings=res.get("warnings", []),
+                pv_span=data.info.get("pv_span", [None, None]),
+            )
         return res
 
     # ---------------------------------------------------------------- results
@@ -173,14 +192,16 @@ def register_routes(app: Flask) -> None:
     def results_page():
         """Страница результатов с графиками."""
         state = get_state()
-        if not state.get("K"):
+        if not state.get("K") and not state.get("Ka"):
             flash("Сначала загрузите данные процесса.", "warning")
             return redirect(url_for("index"))
         return render_template(
             "results.html",
             state={
                 "upload_name": state.get("upload_name"),
+                "model_type": _model_type(),
                 "K": state.get("K"), "T": state.get("T"),
+                "Ka": state.get("Ka"),
                 "tau": state.get("tau"), "Ku": state.get("Ku"),
                 "Tu": state.get("Tu"),
                 "fit_quality": state.get("fit_quality"),
@@ -211,7 +232,7 @@ def register_routes(app: Flask) -> None:
     def _resolve_sim_context(payload: dict) -> dict:
         """Разбирает общий контекст (модель + параметры симуляции) из payload."""
         state = get_state()
-        if not state.get("K"):
+        if not state.get("K") and not state.get("Ka"):
             raise ValueError("Данные не загружены.")
 
         sp_target = _num(payload.get("sp_target"))
@@ -228,21 +249,39 @@ def register_routes(app: Flask) -> None:
             cv_clip = bool(payload.get("cv_clip", True))
             cv_min, cv_max = 0.0, 100.0
 
-        # Ручное редактирование параметров модели FOPDT (опционально)
-        model_k = _num(payload.get("model_k"))
-        model_t = _num(payload.get("model_t"))
+        # Тип модели: из payload (выбор в интерфейсе) либо из состояния
+        model_type = payload.get("model_type", _model_type())
+        if model_type not in ("fopdt", "ipdt"):
+            model_type = "fopdt"
+        state["model_type"] = model_type
+
         model_tau = _num(payload.get("model_tau"))
-        if model_k is not None:
-            state["K"] = model_k
-        if model_t is not None:
-            state["T"] = model_t
         if model_tau is not None:
             state["tau"] = model_tau
-        save_state(K=state["K"], T=state["T"], tau=state["tau"])
+
+        if model_type == "ipdt":
+            model_ka = _num(payload.get("model_ka"))
+            if model_ka is not None:
+                state["Ka"] = model_ka
+            save_state(model_type="ipdt", Ka=state.get("Ka"), tau=state["tau"],
+                       m0=state.get("m0", 0.0))
+            model = identification.IpdtModel(Ka=state.get("Ka", 0.0),
+                                             tau=state["tau"],
+                                             m0=state.get("m0", 0.0))
+        else:
+            # Ручное редактирование параметров модели FOPDT (опционально)
+            model_k = _num(payload.get("model_k"))
+            model_t = _num(payload.get("model_t"))
+            if model_k is not None:
+                state["K"] = model_k
+            if model_t is not None:
+                state["T"] = model_t
+            save_state(model_type="fopdt", K=state["K"], T=state["T"],
+                       tau=state["tau"])
+            model = identification.FopdtModel(K=state["K"], T=state["T"],
+                                              tau=state["tau"])
 
         data = _load_processed()
-        model = identification.FopdtModel(K=state["K"], T=state["T"],
-                                          tau=state["tau"])
 
         data_span = float(data.time[-1] - data.time[0])
         sim_time = min(max(2.0 * data_span, 60.0), 3600.0)
@@ -254,6 +293,7 @@ def register_routes(app: Flask) -> None:
 
         return {
             "state": state, "data": data, "model": model,
+            "model_type": model_type,
             "cv_clip": cv_clip, "cv_min": cv_min, "cv_max": cv_max,
             "sim_time": sim_time, "sp_start": sp_start,
             "sp_target": sp_target, "dt_sim": dt_sim,
@@ -281,25 +321,44 @@ def register_routes(app: Flask) -> None:
             step_reduction=Config.SATURATION_STEP_REDUCTION,
             warn_sat_frac=Config.SATURATION_WARN_FRAC,
             overshoot_target=Config.SATURATION_OVERSHOOT_TARGET,
-            sp_array=ctx["data"].sp)
+            sp_array=ctx["data"].sp,
+            model_type=ctx["model_type"])
         # Референсная ступенька теперь используется и в основной симуляции
         ctx["sp_start"], ctx["sp_target"] = sim_start_sp, sim_target_sp
         return limited
 
     def _sim_run(ctx, ctype, coeffs) -> tuple:
         """Запускает симуляцию + метрики для заданных коэффициентов."""
+        mt = ctx["model_type"]
+        m = ctx["model"]
         sim = simulator.simulate_closed_loop(
-            ctx["model"].K, ctx["model"].T, ctx["model"].tau, ctype,
+            m.K if mt == "fopdt" else 0.0,
+            m.T if mt == "fopdt" else 0.0,
+            m.tau, ctype,
             coeffs["Kp"], coeffs["Ti"], coeffs["Td"],
             dt_sim=ctx["dt_sim"], sim_time=ctx["sim_time"],
             sp_array=ctx["data"].sp,
             sp_start=ctx["sp_start"], sp_target=ctx["sp_target"],
             cv_clip=ctx["cv_clip"], cv_min=ctx["cv_min"], cv_max=ctx["cv_max"],
-            pv0=ctx["pv0"], cv0=ctx["cv0"])
+            pv0=ctx["pv0"], cv0=ctx["cv0"],
+            model_type=mt, Ka=getattr(m, "Ka", None))
         metrics = simulator.quality_metrics(sim[0], sim[1], sim[2], sim[3],
                                             cv_min=ctx["cv_min"],
                                             cv_max=ctx["cv_max"])
         return sim, metrics
+
+    def _model_response(ctx, model) -> np.ndarray:
+        """Отклик идентифицированной модели на фактический сигнал CV."""
+        if ctx["model_type"] == "ipdt":
+            # Модель = базовый дрейф (m0*t) + интеграл ОТКЛОНЕНИЯ CV от
+            # начального значения: воспроизводит и ровную базу, и рампу.
+            return ctx["data"].pv[0] + getattr(model, "m0", 0.0) * ctx["data"].time \
+                + identification.ipdt_response(
+                    ctx["data"].time, ctx["data"].cv - ctx["data"].cv[0],
+                    model.Ka, model.tau)
+        return ctx["data"].pv[0] + identification.fopdt_response(
+            ctx["data"].time, ctx["data"].cv - ctx["data"].cv[0],
+            model.K, model.T, model.tau)
 
     def _api_calculate_impl():
         payload = request.get_json(silent=True) or {}
@@ -356,16 +415,17 @@ def register_routes(app: Flask) -> None:
         # П2: оценка управляемости объекта
         ctrl = pid_tuning.controllability(model)
 
-        # Отклик идентифицированной FOPDT-модели на фактический сигнал CV
-        model_pv = data.pv[0] + identification.fopdt_response(
-            data.time, data.cv - data.cv[0], model.K, model.T, model.tau)
+        # Отклик идентифицированной модели на фактический сигнал CV
+        model_pv = _model_response(ctx, model)
 
         response = {
             "coeffs": coeffs,
             "metrics": metrics,
             "quality_warnings": quality_warnings,
             "controlability": ctrl,
-            "model": {"K": state["K"], "T": state["T"], "tau": state["tau"],
+            "model": {"K": state.get("K"), "T": state.get("T"),
+                      "Ka": state.get("Ka"), "tau": state.get("tau"),
+                      "type": ctx["model_type"],
                       "Ku": state.get("Ku"), "Tu": state.get("Tu")},
             "warnings": state.get("warnings", []),
             "raw": {
@@ -419,8 +479,12 @@ def register_routes(app: Flask) -> None:
             lambda m, c, kp0, ti0, td0: identification.optimize_itae(
                 m, c, kp0, ti0, td0))
 
+        # Для IPDT-объекта доступен только подмножество методов настройки
+        active_methods = (pid_tuning.METHODS if ctx["model_type"] == "fopdt"
+                          else pid_tuning.IPDT_METHODS)
+
         methods_out = []
-        for method in pid_tuning.METHODS:
+        for method in active_methods:
             if method == "itae":
                 continue
             # Ручные коэффициенты применимы только к выбранному методу
@@ -502,14 +566,16 @@ def register_routes(app: Flask) -> None:
 
         # Общий контекст (модель, сырые данные, отклик модели, управляемость)
         ctrl = pid_tuning.controllability(model)
-        model_pv = data.pv[0] + identification.fopdt_response(
-            data.time, data.cv - data.cv[0], model.K, model.T, model.tau)
+        model_pv = _model_response(ctx, model)
 
         response = {
             "method": selected,
             "ctype": ctype,
+            "model_type": ctx["model_type"],
             "controlability": ctrl,
-            "model": {"K": state["K"], "T": state["T"], "tau": state["tau"],
+            "model": {"K": state.get("K"), "T": state.get("T"),
+                      "Ka": state.get("Ka"), "tau": state.get("tau"),
+                      "type": ctx["model_type"],
                       "Ku": state.get("Ku"), "Tu": state.get("Tu")},
             "warnings": state.get("warnings", []),
             "quality_warnings": quality_warnings,
@@ -530,13 +596,18 @@ def register_routes(app: Flask) -> None:
         """Повторная идентификация выбранным методом (AJAX)."""
         payload = request.get_json(silent=True) or {}
         mode = payload.get("mode", "auto")
-        save_state(id_mode=mode)
+        mt = payload.get("model_type", _model_type())
+        if mt not in ("fopdt", "ipdt"):
+            mt = "fopdt"
+        save_state(id_mode=mode, model_type=mt)
         try:
             _identify_and_store(app)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         state = get_state()
-        return jsonify({"K": state["K"], "T": state["T"], "tau": state["tau"],
+        return jsonify({"model_type": state.get("model_type", mt),
+                        "K": state.get("K"), "T": state.get("T"),
+                        "Ka": state.get("Ka"), "tau": state.get("tau"),
                         "Ku": state.get("Ku"), "Tu": state.get("Tu")})
 
     # --------------------------------------------------------------- exports

@@ -7,12 +7,15 @@
 from __future__ import annotations
 
 from config import Config
-from core.identification import FopdtModel
+from core.identification import FopdtModel, IpdtModel
 
 # 9 канонических методов + оптимизация ITAE
 METHODS = ("zn_open", "zn_closed", "cohen",
            "chr_sp0", "chr_sp20", "chr_ds0", "chr_ds20",
            "imc", "simc", "amigo", "itae")
+
+# Методы, применимые к интегрирующему звену с запаздыванием (IPDT)
+IPDT_METHODS = ("zn_closed", "imc", "simc", "itae")
 
 CONTROLLER_TYPES = ("P", "PI", "PID")
 
@@ -168,11 +171,77 @@ def amigo(model: FopdtModel, ctype: str) -> dict:
     return _apply_type(kp, ti, td, ctype)
 
 
-def tune(method: str, model: FopdtModel, ctype: str,
+# ------------------------------------------------------------ IPDT tuning (PI)
+def _ipdt_pi(kp: float, ti: float, ctype: str) -> dict:
+    """
+    Приводит коэффициенты к типу регулятора для IPDT-объекта.
+
+    Для интегрирующего процесса дифференциальная составляющая не добавляется
+    (IPDT настраивается P- или PI-регулятором), поэтому Td всегда None.
+    """
+    if ctype == "P":
+        return {"Kp": float(kp), "Ti": None, "Td": None}
+    return {"Kp": float(kp), "Ti": float(ti), "Td": None}
+
+
+def imc_ipdt(model: IpdtModel, ctype: str, lam: float | None | None) -> dict:
+    """
+    Внутренняя модель (IMC) для IPDT: G(s) = Ka*s^-1*exp(-tau*s).
+
+    PI-настройка: Kp = 1/(Ka*(λ+τ)), Ti = 4*(λ+τ). По умолчанию λ = τ.
+    """
+    if lam is None or lam <= 0:
+        lam = model.tau
+    kp = 1.0 / (abs(model.Ka) * (lam + model.tau))
+    ti = 4.0 * (lam + model.tau)
+    return _ipdt_pi(kp, ti, ctype)
+
+
+def simc_ipdt(model: IpdtModel, ctype: str, tau_c: float | None | None) -> dict:
+    """
+    SIMC (Skogestad IMC, 2003) для интегрирующего процесса с запаздыванием.
+
+    PI-настройка: Kp = 1/(Ka*(τc+τ)), Ti = 4*(τc+τ). По умолчанию τc = τ.
+    """
+    if tau_c is None or tau_c <= 0:
+        tau_c = model.tau
+    kp = 1.0 / (abs(model.Ka) * (tau_c + model.tau))
+    ti = 4.0 * (tau_c + model.tau)
+    return _ipdt_pi(kp, ti, ctype)
+
+
+def tune_ipdt(method: str, model: IpdtModel, ctype: str,
+              ku: float | None = None, tu: float | None = None,
+              lam: float | None = None, tau_c: float | None = None,
+              itae_optimizer=None) -> dict:
+    """Диспетчер методов настройки для IPDT-модели."""
+    if method == "zn_closed":
+        return zn_closed_loop(ku, tu, ctype)
+    if method == "imc":
+        return imc_ipdt(model, ctype, lam)
+    if method == "simc":
+        return simc_ipdt(model, ctype, tau_c)
+    if method == "itae":
+        if itae_optimizer is None:
+            raise ValueError("Оптимизатор ITAE недоступен.")
+        start = imc_ipdt(model, ctype, lam)
+        kp, ti, td = itae_optimizer(
+            model, ctype, start["Kp"],
+            start.get("Ti") or max(start["Kp"], 1.0), 0.0)
+        return _ipdt_pi(kp, ti, ctype)
+    raise ValueError(f"Метод «{method}» не применим к интегрирующему "
+                     "объекту (IPDT). Используйте Зиглер–Николс (замкнутый), "
+                     "IMC, SIMC или ITAE.")
+
+
+def tune(method: str, model, ctype: str,
           ku: float | None = None, tu: float | None = None,
           lam: float | None = None, tau_c: float | None = None,
           itae_optimizer=None) -> dict:
     """Диспетчер методов настройки."""
+    if isinstance(model, IpdtModel):
+        return tune_ipdt(method, model, ctype, ku=ku, tu=tu, lam=lam,
+                         tau_c=tau_c, itae_optimizer=itae_optimizer)
     if method == "zn_open":
         return zn_open_loop(model, ctype)
     if method == "zn_closed":
@@ -205,15 +274,23 @@ def tune(method: str, model: FopdtModel, ctype: str,
 
 
 # ------------------------------------------------------- управляемость (П2)
-def controllability(model: FopdtModel) -> dict:
+def controllability(model) -> dict:
     """
-    Оценка управляемости объекта по параметрам FOPDT.
+    Оценка управляемости объекта по параметрам модели.
 
-    Основной показатель — отношение чистого запаздывания к постоянной
-    времени τ/T. Чем оно больше, тем труднее объект: запаздывание
-    «затягивает» реакцию и раскачивает контур. Дополнительно отмечается
-    низкая чувствительность (малый |K|).
+    Для FOPDT основной показатель — отношение чистого запаздывания к
+    постоянной времени τ/T. Для IPDT (интегрирующее звено) оценивается по
+    длительности запаздывания τ в сравнении с интересующим временем контура.
     """
+    if isinstance(model, IpdtModel):
+        return {
+            "ratio": round(model.tau, 3), "level": "moderate",
+            "label": "интегрирующий объект (IPDT)",
+            "weak_gain": False,
+            "hints": ["интегрирующее звено — наличие запаздывания требует "
+                      "PI-настройки; D-составляющая не применяется"],
+        }
+
     ratio = model.tau / model.T if model.T > 0 else float("inf")
 
     if ratio < Config.CONTROLLABILITY_LOW:
@@ -241,14 +318,15 @@ def controllability(model: FopdtModel) -> dict:
 
 
 # --------------------------------------------------- учёт насыщения (П3)
-def limit_kp_by_saturation(coeffs: dict, model: FopdtModel, ctype: str,
+def limit_kp_by_saturation(coeffs: dict, model, ctype: str,
                            sp_start: float, sp_target: float,
                            dt_sim: float = 0.05, sim_time: float = 200.0,
                            max_kp_factor: float = 0.1,
                            step_reduction: float = 0.9,
                            warn_sat_frac: float = 0.05,
                            overshoot_target: float = 30.0,
-                           sp_array: np.ndarray | None = None) -> dict:
+                           sp_array: np.ndarray | None = None,
+                           model_type: str = "fopdt") -> dict:
     """
     Смягчает слишком агрессивный Kp, пока отклик не станет приемлемым.
 
@@ -270,11 +348,15 @@ def limit_kp_by_saturation(coeffs: dict, model: FopdtModel, ctype: str,
 
     def response(kp: float) -> dict:
         t, sp, pv, cv = simulator.simulate_closed_loop(
-            model.K, model.T, model.tau, ctype, kp,
+            model.K if not isinstance(model, IpdtModel) else 0.0,
+            model.T if not isinstance(model, IpdtModel) else 0.0,
+            model.tau, ctype, kp,
             coeffs.get("Ti"), coeffs.get("Td"),
             dt_sim=dt_sim, sim_time=sim_time,
             sp_array=sp_array,
-            sp_start=sp_start, sp_target=sp_target)
+            sp_start=sp_start, sp_target=sp_target,
+            model_type=model_type,
+            Ka=getattr(model, "Ka", None))
         return simulator.quality_metrics(t, sp, pv, cv)
 
     def acceptable(kp: float) -> bool:

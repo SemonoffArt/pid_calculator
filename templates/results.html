@@ -14,13 +14,23 @@
   <!-- Панель управления -->
   <div class="col-lg-4">
     <div class="card shadow-sm p-3 mb-3">
-      <h5 class="mb-3">Параметры модели FOPDT
+      <h5 class="mb-2">Параметры модели
         {% if state.normalized %}
           <span class="badge text-bg-success">нормализовано</span>
         {% endif %}
       </h5>
+      <div class="mb-2">
+        <label for="model-type" class="form-label">Тип модели
+          <span class="help-q" data-bs-toggle="tooltip"
+            data-bs-title="FOPDT — апериодическое звено первого порядка с запаздыванием (самовыравнивающийся объект: печь, теплообменник). IPDT — интегрирующее звено с запаздыванием (объект без самовыравнивания: уровень, давление в ёмкости). Смена типа запускает повторную идентификацию по данным.">?</span></label>
+        <select class="form-select" id="model-type">
+          <option value="fopdt" {% if state.model_type != 'ipdt' %}selected{% endif %}>FOPDT — апериодическое звено</option>
+          <option value="ipdt" {% if state.model_type == 'ipdt' %}selected{% endif %}>IPDT — интегрирующее звено с запаздыванием</option>
+        </select>
+      </div>
       <table class="table table-sm table-striped" id="model-params-table">
-        <tr><th>K (усиление)
+        <tbody>
+        <tr id="fopdt-K-row"><th>K (усиление)
             <span class="help-q" data-bs-toggle="tooltip"
               data-bs-title="Коэффициент усиления объекта. Насколько изменится PV (в единицах измерения) при изменении выхода регулятора CV на 1 %. Определяется как отношение установившихся изменений ΔPV/ΔCV. Отрицательный K означает обратное действие: увеличение CV уменьшает PV (например, клапан охлаждения). Знак учитывается автоматически. Можно отредактировать вручную.">?</span></th>
             <td><input type="number" step="any" class="form-control form-control-sm"
@@ -29,14 +39,23 @@
                 <span class="badge text-bg-info">обратное действие</span>
               {% endif %}
             </td></tr>
-        <tr><th>T (пост. времени), с
+        <tr id="fopdt-T-row"><th>T (пост. времени), с
             <span class="help-q" data-bs-toggle="tooltip"
               data-bs-title="Постоянная времени объекта. Время, за которое выход достигает 63,2 % от установившегося изменения после прохождения запаздывания. Характеризует инерционность: чем больше T, тем медленнее реагирует процесс. Можно отредактировать вручную.">?</span></th>
             <td><input type="number" step="any" class="form-control form-control-sm"
                        id="model-T" value="{{ '%.4g'|format(state.T or 0) }}"></td></tr>
+        <tr id="ipdt-Ka-row" style="display:none;"><th>Ka (усиление интегрир.), 1/с
+            <span class="help-q" data-bs-toggle="tooltip"
+              data-bs-title="Интегральный коэффициент усиления интегрирующего объекта. Скорость нарастания PV при изменении CV на 1 %: при ступеньке CV на Δu выход растёт со скоростью Ka·Δu (ед. PV/с). Отрицательный Ka — обратное действие (например, дренаж уровня). Знак учитывается автоматически.">?</span></th>
+            <td><input type="number" step="any" class="form-control form-control-sm"
+                       id="model-Ka" value="{{ '%.4g'|format(state.Ka or 0) }}">
+              {% if state.Ka and state.Ka < 0 %}
+                <span class="badge text-bg-info">обратное действие</span>
+              {% endif %}
+            </td></tr>
         <tr><th>τ (запаздывание), с
             <span class="help-q" data-bs-toggle="tooltip"
-              data-bs-title="Чистое запаздывание. Время от изменения входа до начала реакции выхода (транспорт вещества, гидравлика, дискретность измерений). Чем больше отношение τ/T, тем труднее объект и тем осторожнее нужно выбирать Kp. Можно отредактировать вручную.">?</span></th>
+              data-bs-title="Чистое запаздывание. Время от изменения входа до начала реакции выхода (транспорт вещества, гидравлика, дискретность измерений). Чем больше отношение τ/T (для FOPDT), тем труднее объект и тем осторожнее нужно выбирать Kp. Можно отредактировать вручную.">?</span></th>
             <td><input type="number" step="any" class="form-control form-control-sm"
                        id="model-tau" value="{{ '%.4g'|format(state.tau or 0) }}"></td></tr>
         <tr><th>Ku / Tu
@@ -51,7 +70,7 @@
         {% endif %}
         <tr><th>Управляемость
             <span class="help-q" data-bs-toggle="tooltip"
-              data-bs-title="Оценка, насколько легко объект регулируется классическими методами. Главный показатель — τ/T: меньше 0,2 — хорошо управляемый; 0,2…0,6 — умеренно трудный; больше 0,6 — трудный. Дополнительно отмечается низкая чувствительность (малый |K|) — Kp получается большим.">?</span></th>
+              data-bs-title="Оценка, насколько легко объект регулируется классическими методами. Для FOPDT главный показатель — τ/T: меньше 0,2 — хорошо управляемый; 0,2…0,6 — умеренно трудный; больше 0,6 — трудный. Для IPDT (интегрирующее звено) оценивается величина запаздывания τ.">?</span></th>
             <td id="model-ctrl">—</td></tr>
         <tr id="model-ctrl-hint-row" style="display:none;">
           <td colspan="2" id="model-ctrl-hint" class="text-muted small"></td>
@@ -60,6 +79,7 @@
         <tr><th>Единицы PV/SP</th>
             <td class="small">0–100 % (масштаб {{ "%.3g"|format(state.norm_scale) }})</td></tr>
         {% endif %}
+        </tbody>
       </table>
     </div>
 
@@ -72,7 +92,7 @@
         <select class="form-select" id="method">
           <optgroup label="Зиглер–Николс">
             <option value="zn_open">З–Н, разомкнутый контур</option>
-            <option value="zn_closed">З–Н, замкнутый контур (Ku/Tu)</option>
+            <option value="zn_closed" data-ipdt="1">З–Н, замкнутый контур (Ku/Tu)</option>
           </optgroup>
           <optgroup label="Cohen–Coon / CHR">
             <option value="cohen">Cohen–Coon (1953)</option>
@@ -82,12 +102,12 @@
             <option value="chr_ds20">Чен–Хрон: возмущение, 20 %</option>
           </optgroup>
           <optgroup label="Модельные (IMC/SIMC/AMIGO)">
-            <option value="imc">Внутренняя модель (IMC)</option>
-            <option value="simc">SIMC (Skogestad, 2003)</option>
+            <option value="imc" data-ipdt="1">Внутренняя модель (IMC)</option>
+            <option value="simc" data-ipdt="1">SIMC (Skogestad, 2003)</option>
             <option value="amigo">AMIGO (Åström–Hägglund, 2004)</option>
           </optgroup>
           <optgroup label="Оптимизация">
-            <option value="itae">Оптимизация ITAE</option>
+            <option value="itae" data-ipdt="1">Оптимизация ITAE</option>
           </optgroup>
         </select>
       </div>
@@ -227,7 +247,7 @@
       <div id="plot-raw" style="height:340px;"></div>
     </div>
     <div class="card shadow-sm p-3 mb-3">
-      <h5>Модель FOPDT и данные</h5>
+      <h5>Модель <span id="model-chart-title">FOPDT</span> и данные</h5>
       <div id="plot-model" style="height:300px;"></div>
     </div>
 

@@ -88,14 +88,22 @@ def _plot_raw(data) -> io.BytesIO:
 
 
 def _plot_model(state, data) -> io.BytesIO:
-    from core.identification import fopdt_response
-    # Отклик считаем от приращения CV и привязываем к начальному PV —
-    # так же, как на веб-странице «Результаты» (иначе модель «уезжает»).
-    model_pv = float(data.pv[0]) + fopdt_response(
-        data.time, data.cv - data.cv[0], state["K"], state["T"], state["tau"])
+    from core.identification import fopdt_response, ipdt_response
+    if state.get("model_type") == "ipdt":
+        model_pv = float(data.pv[0]) + float(state.get("m0", 0.0)) * data.time \
+            + ipdt_response(data.time, data.cv - data.cv[0],
+                            state["Ka"], state["tau"])
+        label = "Модель IPDT"
+    else:
+        # Отклик считаем от приращения CV и привязываем к начальному PV —
+        # так же, как на веб-странице «Результаты» (иначе модель «уезжает»).
+        model_pv = float(data.pv[0]) + fopdt_response(
+            data.time, data.cv - data.cv[0], state["K"], state["T"],
+            state["tau"])
+        label = "Модель FOPDT"
     fig, ax = plt.subplots(figsize=(7.5, 3.0))
     ax.plot(data.time, data.pv, label="PV (данные)", lw=1)
-    ax.plot(data.time, model_pv, "--", label="Модель FOPDT", lw=1.4)
+    ax.plot(data.time, model_pv, "--", label=label, lw=1.4)
     ax.set_xlabel("Время, с"); ax.legend(); ax.grid(alpha=0.3)
     fig.tight_layout()
     return _fig_to_png(fig)
@@ -103,8 +111,12 @@ def _plot_model(state, data) -> io.BytesIO:
 
 def _simulate(state, data, coeffs, ctype, ctx: dict) -> tuple:
     """Запускает симуляцию по контексту (общему для всех методов)."""
+    mt = state.get("model_type", "fopdt")
+    is_ipdt = mt == "ipdt"
     return simulator.simulate_closed_loop(
-        state["K"], state["T"], state["tau"], ctype,
+        (state.get("K", 0.0) if not is_ipdt else 0.0),
+        (state.get("T", 0.0) if not is_ipdt else 0.0),
+        state.get("tau", 0.0), ctype,
         coeffs["Kp"], coeffs.get("Ti"), coeffs.get("Td"),
         dt_sim=ctx.get("dt_sim", max(data.dt / 5.0, 0.01)),
         sim_time=ctx.get("sim_time",
@@ -114,7 +126,8 @@ def _simulate(state, data, coeffs, ctype, ctx: dict) -> tuple:
         sp_start=ctx.get("sp_start"), sp_target=ctx.get("sp_target"),
         cv_clip=ctx.get("cv_clip", True), cv_min=ctx.get("cv_min", 0.0),
         cv_max=ctx.get("cv_max", 100.0),
-        pv0=ctx.get("pv0"), cv0=ctx.get("cv0"))
+        pv0=ctx.get("pv0"), cv0=ctx.get("cv0"),
+        model_type=mt, Ka=state.get("Ka"))
 
 
 def _plot_sim(sim, metrics=None, title: str = "") -> io.BytesIO:
@@ -209,12 +222,22 @@ def build_pdf(state: dict, data) -> io.BytesIO:
     ]
 
     # Таблица параметров модели
-    model_rows = [
-        ["Параметр модели", "Значение"],
-        ["K (коэффициент усиления)", f"{state['K']:.4f}"],
-        ["T (постоянная времени), с", f"{state['T']:.2f}"],
-        ["τ (запаздывание), с", f"{state['tau']:.2f}"],
-    ]
+    if state.get("model_type") == "ipdt":
+        model_rows = [
+            ["Параметр модели", "Значение"],
+            ["Ka (интегральное усиление), 1/с", f"{state['Ka']:.4f}"],
+            ["τ (запаздывание), с", f"{state['tau']:.2f}"],
+            ["Тип модели", "IPDT — интегрирующее звено с запаздыванием"],
+        ]
+        model_head = "Параметры идентифицированной модели IPDT"
+    else:
+        model_rows = [
+            ["Параметр модели", "Значение"],
+            ["K (коэффициент усиления)", f"{state['K']:.4f}"],
+            ["T (постоянная времени), с", f"{state['T']:.2f}"],
+            ["τ (запаздывание), с", f"{state['tau']:.2f}"],
+        ]
+        model_head = "Параметры идентифицированной модели FOPDT"
     if state.get("Ku"):
         model_rows += [["Ku (критическое усиление)", f"{state['Ku']:.3f}"],
                        ["Tu (период автоколебаний), с", f"{state['Tu']:.2f}"]]
@@ -226,8 +249,7 @@ def build_pdf(state: dict, data) -> io.BytesIO:
         ("FONTSIZE", (0, 0), (-1, -1), 9),
         ("TOPPADDING", (0, 0), (-1, -1), 3),
     ]))
-    story += [Paragraph("Параметры идентифицированной модели FOPDT",
-                        styles["Heading2"]), mt, Spacer(1, 14)]
+    story += [Paragraph(model_head, styles["Heading2"]), mt, Spacer(1, 14)]
 
     # Коэффициенты регулятора (выбранный метод)
     coeffs = state["coeffs"]
@@ -263,7 +285,7 @@ def build_pdf(state: dict, data) -> io.BytesIO:
     story += [Paragraph("Исходные данные процесса", styles["Heading2"]),
               Image(_plot_raw(data), width=16 * cm, height=6.8 * cm),
               Spacer(1, 10),
-              Paragraph("Сравнение данных и модели FOPDT", styles["Heading2"]),
+              Paragraph("Сравнение данных и модели", styles["Heading2"]),
               Image(_plot_model(state, data), width=16 * cm, height=6.4 * cm)]
 
     # Сводная таблица сравнения — сразу после сравнения данных и модели

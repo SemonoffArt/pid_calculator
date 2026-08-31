@@ -25,18 +25,24 @@ def _simulate(K: float, T: float, tau: float,
               cv_max: float = 100.0,
               substeps: int = 5,
               pv0: float | None = None,
-              cv0: float | None = None) -> tuple[np.ndarray, np.ndarray]:
+              cv0: float | None = None,
+              model_type: str = "fopdt",
+              Ka: float | None = None) -> tuple[np.ndarray, np.ndarray]:
     """Дискретная симуляция замкнутого контура. Возвращает t, pv, cv.
 
     Каждый шаг данных делится на подшаги (substeps), внутри которых объект
-    интегрируется ТОЧНО (ZOH-дискретизация звена первого порядка). Мелкий
-    подшаг важен для устойчивости контуров с усилением, близким к границе.
+    интегрируется ТОЧНО (ZOH-дискретизация звена первого порядка либо точное
+    интегрирование для IPDT). Мелкий подшаг важен для устойчивости контуров
+    с усилением, близким к границе.
 
     pv0/cv0 — начальная рабочая точка: стартовое значение PV и хода CV
     (буфер запаздывания заполняется cv0, чтобы объект не «проседал» в первую
     секунду из-за нулевого начального управления). Если cv0 не задана,
     по умолчанию берётся равновесное значение sp[0]/K (старт без «провала»);
     если pv0 не задано — PV = SP[0].
+
+    model_type="ipdt" — объект является интегрирующим звеном с запаздыванием:
+    dy/dt = Ka*u(t - tau). Параметры K/T игнорируются, используется Ka.
     """
     n = len(time)
     dt = time[1] - time[0]
@@ -48,10 +54,12 @@ def _simulate(K: float, T: float, tau: float,
     # Если начальная рабочая точка не задана — стартуем из равновесия:
     # CV = sp[0]/K удерживает PV на начальном задании без «проседания».
     # При sp[0] = 0 cv0 = 0 (совпадает с прежним поведением).
-    if cv0 is None and K != 0:
-        cv0 = float(sp[0]) / float(K)
-    elif cv0 is None:
-        cv0 = 0.0
+    # Для IPDT равновесие достигается при u = 0 (интегратор останавливается).
+    if cv0 is None:
+        if model_type == "ipdt" or K == 0:
+            cv0 = 0.0
+        else:
+            cv0 = float(sp[0]) / float(K)
 
     # Буфер задержки управляющего воздействия (кольцевой массив)
     buf_len = max(delay_steps + m + 2, m + 2)
@@ -61,12 +69,16 @@ def _simulate(K: float, T: float, tau: float,
     integ = 0.0                             # интеграл ошибки
     e_prev = sp[0] - y                      # предыдущая ошибка
     dfilt = 0.0                             # состояние D-фильтра
-    if kp != 0:
+    if kp != 0 and model_type != "ipdt":
         # Начинаем из равновесия: CV = Kp*(e + integ) при e=0 → integ = cv0/Kp
         integ = cv0 / kp
 
     # Точная ZOH-дискретизация на подшаге h: y = a*y + b*u_delayed
-    if T > 0:
+    if model_type == "ipdt":
+        ka_eff = Ka if Ka is not None else 0.0
+        a = 1.0
+        b = h * ka_eff
+    elif T > 0:
         a = np.exp(-h / T)
         b = K * (1.0 - a)
     else:
@@ -113,7 +125,7 @@ def _simulate(K: float, T: float, tau: float,
         ubuf[-1] = u
         u_delayed = ubuf[0] if delay_steps < len(ubuf) else 0.0
 
-        # Объект FOPDT — точная дискретная модель на подшаге
+        # Объект — точная дискретная модель на подшаге
         y = a * y + b * u_delayed
 
         if k % m == 0:
@@ -136,7 +148,9 @@ def simulate_closed_loop(K: float, T: float, tau: float, controller_type: str,
                          cv_clip: bool = True, cv_min: float = 0.0,
                          cv_max: float = 100.0,
                          pv0: float | None = None,
-                         cv0: float | None = None):
+                         cv0: float | None = None,
+                         model_type: str = "fopdt",
+                         Ka: float | None = None):
     """
     Симуляция отклика замкнутой системы.
 
@@ -147,15 +161,17 @@ def simulate_closed_loop(K: float, T: float, tau: float, controller_type: str,
     cv_clip — ограничивать ли выход регулятора диапазоном [cv_min, cv_max].
     pv0/cv0 — начальная рабочая точка (стартовое PV и ход CV); если не
     заданы, PV стартует с SP[0], CV с 0.
+    model_type="ipdt" — объект: интегрирующее звено с запаздыванием
+    (используется Ka вместо K/T).
     Возвращает (time, sp, pv, cv).
     """
     if sp_start is not None and sp_target is not None:
         time = np.arange(0.0, sim_time + dt_sim * 0.5, dt_sim)
         sp = np.full(len(time), float(sp_start))
-        # Ступенька задания подаётся в момент T + τ (постоянная времени +
-        # запаздывание объекта): к этому моменту процесс успевает выйти на
-        # установившийся режим от начальной рабочей точки.
-        step_time = max(T + tau, dt_sim)
+        # Ступенька задания подаётся, когда процесс успевает выйти на
+        # установившийся режим от начальной рабочей точки (для FOPDT — T+τ,
+        # для IPDT — после выхода запаздывания).
+        step_time = max((T if model_type == "fopdt" else 0.0) + tau, dt_sim)
         step_at = int(min(round(step_time / dt_sim), len(time) - 2))
         sp[step_at:] = float(sp_target)
     elif sp_profile == "array" and sp_array is not None and len(sp_array) > 1:
@@ -174,14 +190,15 @@ def simulate_closed_loop(K: float, T: float, tau: float, controller_type: str,
     td_eff = td if (controller_type in ("PID",) and td) else None
     n_filter = 10.0  # коэффициент фильтра D-составляющей
 
-    # Знак усиления объекта: при K < 0 регулятор должен действовать
-    # реверсивно (уменьшать выход при росте ошибки), иначе контур разойдётся.
-    # Коэффициенты настройки задаются по модулю усиления.
-    kp_eff = np.sign(K) * kp
+    # Знак усиления объекта: при K < 0 (или Ka < 0 для IPDT) регулятор должен
+    # действовать реверсивно (уменьшать выход при росте ошибки), иначе контур
+    # разойдётся. Коэффициенты настройки задаются по модулю усиления.
+    gain = Ka if model_type == "ipdt" else K
+    kp_eff = np.sign(gain) * kp
 
     pv, cv = _simulate(K, T, tau, kp_eff, ti_eff, td_eff, n_filter, time, sp,
                        cv_clip=cv_clip, cv_min=cv_min, cv_max=cv_max,
-                       pv0=pv0, cv0=cv0)
+                       pv0=pv0, cv0=cv0, model_type=model_type, Ka=Ka)
     return time, sp, pv, cv
 
 

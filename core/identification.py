@@ -35,6 +35,24 @@ class FopdtModel:
     fit_quality: float = float("nan")  # R^2 аппроксимации
 
 
+@dataclass
+class IpdtModel:
+    """
+    Параметры интегрирующего звена с запаздыванием:
+
+        G(s) = Ka * exp(-tau*s) / s
+
+    Ka — интегральный коэффициент усиления (скорость нарастания PV на
+    единицу изменения CV): [ед. PV / (% CV * сек)]. Может быть отрицательным
+    (обратное действие). tau — чистое запаздывание, сек.
+    """
+    Ka: float     # интегральный коэффициент усиления, ед. PV / (%CV * с)
+    tau: float    # чистое запаздывание, сек
+    method: str = ""
+    fit_quality: float = float("nan")
+    m0: float = 0.0   # наклон базы до ступеньки (дрейф уровня), ед. PV/с
+
+
 # Минимальный допустимый R² аппроксимации; ниже — данные непригодны
 MIN_FIT_R2 = 0.15
 
@@ -63,6 +81,34 @@ def fopdt_response(time: np.ndarray, u: np.ndarray, K: float, T: float,
     with np.errstate(over="ignore", invalid="ignore"):
         for i in range(1, n):
             y[i] = y[i - 1] + a * (K * u_delayed[i - 1] - y[i - 1])
+    return y
+
+
+def ipdt_response(time: np.ndarray, u: np.ndarray, Ka: float,
+                  tau: float, y0: float = 0.0) -> np.ndarray:
+    """
+    Отклик интегрирующего звена с запаздыванием на входной сигнал u(t).
+
+        y[k+1] = y[k] + dt * Ka * u(t - tau)
+
+    Дискретная модель точная (ZOH-интегрирование). Начальное значение —
+    y0 (обычно 0 — отклик в приращениях).
+    """
+    dt = time[1] - time[0]
+    n = len(time)
+    delay_samples = max(0, int(round(tau / dt)))
+    u_delayed = np.empty_like(u)
+    if delay_samples >= n:
+        u_delayed[:] = u[0]
+    else:
+        u_delayed[delay_samples:] = u[: n - delay_samples]
+        u_delayed[:delay_samples] = u[0]
+
+    y = np.empty(n)
+    y[0] = y0
+    with np.errstate(over="ignore", invalid="ignore"):
+        for i in range(1, n):
+            y[i] = y[i - 1] + dt * Ka * u_delayed[i - 1]
     return y
 
 
@@ -146,6 +192,112 @@ def identify_step_response(time: np.ndarray, cv: np.ndarray, pv: np.ndarray,
         raise ValueError(f"Аппроксимация по переходной характеристике плохая "
                          f"(R²={r2:.2f}). Попробуйте метод МНК.")
     return FopdtModel(K=K, T=T, tau=tau, method="step", fit_quality=r2)
+
+
+# ---------------------------------------------------------- IPDT step response
+def identify_ipdt_step_response(time: np.ndarray, cv: np.ndarray,
+                                pv: np.ndarray, step_index: int | None
+                                ) -> IpdtModel:
+    """
+    Идентификация интегрирующего звена с запаздыванием (IPDT) по переходной
+    характеристике — методом «изменения наклона».
+
+    Интегратор (dy/dt = Ka·CV) при постоянном ненулевом CV непрерывно
+    дрейфует, поэтому ровная база — лишь частный случай. По наклонам
+    ДО (m0) и ПОСЛЕ (m1) ступеньки CV определяется
+        Ka = (m1 − m0) / du,
+    а запаздывание τ — по абсциссе пересечения двух линий разгона
+    (минус момент ступеньки). При m0 ≈ 0 формула сводится к классическому
+    случаю ровной базы.
+    """
+    if step_index is None or step_index >= len(cv) - 3:
+        raise ValueError("В данных не обнаружена ступенька для метода "
+                         "переходной характеристики.")
+
+    seg_end = _next_event_index(cv, step_index, 0.05)
+
+    u0 = _safe_median(cv[max(0, step_index - 20):step_index])
+    q_start = step_index + max(3, int(0.5 * (seg_end - step_index)))
+    uss = _safe_median(cv[q_start:seg_end])
+    du = uss - u0
+    if not np.isfinite(du):
+        raise ValueError("Недостаточно данных для определения режимов "
+                         "до и после ступеньки.")
+    if abs(du) < 1e-9:
+        raise ValueError("Не удалось определить величину изменения CV.")
+
+    def _slope(tt: np.ndarray, yy: np.ndarray) -> tuple[float, float]:
+        """Наклон и сдвиг по МНК с центрированием (численно устойчиво)."""
+        xm = float(np.mean(tt))
+        ym = float(np.mean(yy))
+        denom = float(np.sum((tt - xm) ** 2))
+        if denom < 1e-12:
+            raise ValueError("Слишком короткий участок для оценки наклона.")
+        slope = float(np.sum((tt - xm) * (yy - ym)) / denom)
+        return slope, float(ym - slope * xm)
+
+    # --- Наклон ДО ступеньки (уровень может дрейфовать с «начальным углом») ---
+    m0 = 0.0
+    a0 = 0.0
+    pre_avail = step_index
+    if pre_avail >= 6:
+        pre_len = min(pre_avail, max(5, int(0.5 * pre_avail)))
+        pre_t = time[step_index - pre_len:step_index]
+        pre_pv = pv[step_index - pre_len:step_index]
+        m0, a0 = _slope(pre_t, pre_pv)
+        if not np.isfinite(m0):
+            raise ValueError("Некорректный наклон участка до ступеньки.")
+        if abs(m0) < 1e-12:
+            # Уровень до ступеньки стоял: горизонтальная линия на уровне y0
+            m0 = 0.0
+            a0 = float(np.mean(pre_pv))
+    else:
+        # Мало данных до ступеньки — считаем базу горизонтальной на уровне
+        # доступных точек до ступеньки (частный случай без дрейфа).
+        pre_pv = pv[max(0, step_index - pre_avail):step_index]
+        a0 = float(_safe_median(pre_pv)) if pre_pv.size else float(pv[0])
+
+    # --- Наклон ПОСЛЕ ступеньки по устойчивому участку рампы (последние 60 %) ---
+    t_seg = time[step_index:seg_end]
+    pv_seg = pv[step_index:seg_end]
+    if len(t_seg) < 6:
+        raise ValueError("Слишком короткий участок после ступеньки.")
+    req_len = max(5, int(0.6 * len(t_seg)))
+    m1, a1 = _slope(t_seg[-req_len:], pv_seg[-req_len:])
+    if not np.isfinite(m1) or abs(m1) < 1e-12:
+        raise ValueError("Наклон ПВ после ступеньки слишком мал — "
+                         "процесс не интегрирующий.")
+
+    # --- Ka по изменению наклона ---
+    dslope = m1 - m0
+    if abs(dslope) < 1e-12:
+        raise ValueError("Скорость изменения PV после ступеньки не "
+                         "изменилась — ступенька CV не отработала.")
+    Ka = dslope / du
+
+    # --- Запаздывание: пересечение двух линий разгона ---
+    t_step = float(time[step_index])
+    if abs(m0 - m1) < 1e-12:
+        t_int = t_step
+    else:
+        # a0 + m0*t = a1 + m1*t  =>  t = (a1 - a0)/(m0 - m1)
+        t_int = float((a1 - a0) / (m0 - m1))
+    tau = max(t_int - t_step, 0.0)
+
+    # R^2 по всему отклику. Модель = базовый дрейф (a0 + m0*t) + интеграл
+    # ОТКЛОНЕНИЯ CV от начального значения (cv - cv[0]). Так модель
+    # воспроизводит и ровную базу, и дрейфующий уровень, и рампу после
+    # ступеньки; интеграл по абсолютному CV ошибочен, если у объекта есть
+    # балансный ход CV (уровень «стоит» при ненулевом CV).
+    fitted = float(pv[0]) + m0 * time + ipdt_response(
+        time, cv - cv[0], Ka, tau)
+    ss_tot = float(np.sum((pv - np.mean(pv)) ** 2))
+    ss_res = float(np.sum((pv - fitted) ** 2))
+    r2 = 1 - ss_res / ss_tot if ss_tot > 0 else float("-inf")
+    if not np.isfinite(r2) or r2 < MIN_FIT_R2:
+        raise ValueError(f"Аппроксимация IPDT неудовлетворительна "
+                         f"(R²={r2:.2f}). Проверьте данные.")
+    return IpdtModel(Ka=Ka, tau=tau, method="step", fit_quality=r2, m0=m0)
 
 
 # ------------------------------------------------------------ least squares fit
@@ -292,15 +444,89 @@ def critical_from_fopdt(model: FopdtModel) -> tuple[float, float]:
     return ku, tu
 
 
-def identify(data, method: str = "auto") -> dict:
+def critical_from_ipdt(model: IpdtModel) -> tuple[float, float]:
+    """
+    Оценка критических параметров замкнутого контура из IPDT-модели.
+
+    Для G(s) = Ka*s^-1*exp(-tau*s) фазовый сдвиг -180°: omega_u*tau = pi/2,
+    откуда Ku = omega_u/Ka = pi/(2*tau*Ka), Tu = 2*pi/omega_u = 4*tau.
+    """
+    if model.tau <= 0 or model.Ka == 0:
+        raise ValueError("Некорректная модель IPDT для расчёта "
+                         "критических параметров.")
+    wu = np.pi / (2 * model.tau)
+    ku = wu / abs(model.Ka)
+    tu = 2 * np.pi / wu
+    return float(ku), float(tu)
+
+
+def _identify_ipdt(data, method: str, results: dict) -> dict:
+    """Идентификация интегрирующего звена с запаздыванием (IPDT)."""
+    errors: list[str] = []
+
+    if method in ("step", "curve_fit", "auto"):
+        # Для IPDT доступна единственная аппроксимация — по переходной
+        # характеристике; режим "curve_fit" (FOPDT-МНК) сводится к ней же.
+        try:
+            results["model"] = identify_ipdt_step_response(
+                data.time, data.cv, data.pv, data.step_index)
+        except ValueError as exc:
+            errors.append(str(exc))
+
+    if results["model"] is None and method == "auto":
+        # Возможен только один способ для IPDT — по переходной характеристике;
+        # при повторном неудачном проходе ошибка уже сформирована.
+        pass
+
+    if method == "relay":
+        ku, tu = identify_relay(data.pv, data.cv, data.dt)
+        results["Ku"], results["Tu"] = ku, tu
+        results["relay"] = True
+        if results["model"] is None:
+            results["model_error"] = "; ".join(errors) if errors else ""
+        return results
+
+    if method not in ("step", "curve_fit", "auto"):
+        raise ValueError(f"Неизвестный метод идентификации: {method}")
+
+    if results["model"] is None:
+        raise ValueError("Идентификация IPDT не удалась. " +
+                         ("; ".join(errors) if errors else
+                          "Нужна ступенька CV в данных."))
+
+    try:
+        results["Ku"], results["Tu"] = critical_from_ipdt(results["model"])
+    except ValueError:
+        pass
+
+    warnings: list[str] = []
+    r2 = results["model"].fit_quality
+    if np.isfinite(r2) and r2 < 0.5:
+        warnings.append(
+            f"Низкое качество аппроксимации модели IPDT (R²={r2:.2f}). "
+            "Возможные причины: короткий участок разгона, шум PV, "
+            "преобладание возмущений. Результатам доверять осторожно.")
+    results["warnings"] = warnings
+    results["errors"] = errors
+    return results
+
+
+def identify(data, method: str = "auto", model_type: str = "fopdt") -> dict:
     """
     Главная функция идентификации. Возвращает словарь с параметрами модели
     и (при возможности) критическими параметрами контура.
+
+    model_type: "fopdt" — модель первого порядка с запаздыванием;
+                "ipdt"  — интегрирующее звено с запаздыванием.
     """
     from core.data_loader import ProcessData  # локальный импорт против цикла
 
     assert isinstance(data, ProcessData)
-    results: dict = {"model": None, "Ku": None, "Tu": None}
+    results: dict = {"model": None, "Ku": None, "Tu": None,
+                     "model_type": model_type}
+
+    if model_type == "ipdt":
+        return _identify_ipdt(data, method, results)
 
     errors: list[str] = []
 
@@ -355,26 +581,39 @@ def identify(data, method: str = "auto") -> dict:
 
 
 # ------------------------------------------------------- ITAE optimization util
-def optimize_itae(model: FopdtModel, controller_type: str, kp0: float,
+def optimize_itae(model, controller_type: str, kp0: float,
                   ti0: float, td0: float, dt_sim: float = 0.05,
-                  sim_time: float | None = None) -> tuple[float, float, float]:
+                  sim_time: float | None = None,
+                  model_type: str = "fopdt") -> tuple[float, float, float]:
     """
     Оптимизация коэффициентов PID минимизацией ITAE при отклике на ступеньку SP.
     Используется дискретный симулятор из core.simulator.
     """
     from core.simulator import simulate_closed_loop
 
+    if isinstance(model, IpdtModel):
+        model_type = "ipdt"
     if sim_time is None:
-        sim_time = min(max(8 * model.T + 4 * model.tau, 30), 600)
+        if model_type == "ipdt":
+            sim_time = min(max(20 * model.tau, 30), 600)
+        else:
+            sim_time = min(max(8 * model.T + 4 * model.tau, 30), 600)
 
     def cost(x):
         kp, ti, td = x
-        ti = max(ti, 1e-3) if ti > 0 else 1e-3
+        max_ti = max(20.0 * sim_time, 10.0)
+        ti = min(max(ti, 1e-3), max_ti) if ti > 0 else 1e-3
         td = max(td, 0.0)
         try:
-            t, sp, pv, _ = simulate_closed_loop(
-                model.K, model.T, model.tau, controller_type,
-                kp, ti, td, dt_sim, sim_time)
+            if model_type == "ipdt":
+                t, sp, pv, _ = simulate_closed_loop(
+                    0.0, 0.0, model.tau, controller_type,
+                    kp, ti, td, dt_sim, sim_time, model_type="ipdt",
+                    Ka=model.Ka)
+            else:
+                t, sp, pv, _ = simulate_closed_loop(
+                    model.K, model.T, model.tau, controller_type,
+                    kp, ti, td, dt_sim, sim_time)
         except Exception:
             return 1e12
         e = sp - pv
@@ -387,4 +626,5 @@ def optimize_itae(model: FopdtModel, controller_type: str, kp0: float,
     res = minimize(cost, x0, method="Nelder-Mead",
                    options={"maxiter": 400, "xatol": 1e-4, "fatol": 1e-4})
     kp, ti, td = res.x
-    return float(kp), float(max(ti, 1e-3)), float(max(td, 0.0))
+    max_ti = max(20.0 * sim_time, 10.0)
+    return float(kp), float(min(max(ti, 1e-3), max_ti)), float(max(td, 0.0))
