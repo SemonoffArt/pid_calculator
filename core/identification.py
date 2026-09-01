@@ -51,6 +51,7 @@ class IpdtModel:
     method: str = ""
     fit_quality: float = float("nan")
     m0: float = 0.0   # наклон базы до ступеньки (дрейф уровня), ед. PV/с
+    balance: float = 0.0  # балансный ход CV, при котором уровень «стоит»
 
 
 # Минимальный допустимый R² аппроксимации; ниже — данные непригодны
@@ -275,6 +276,10 @@ def identify_ipdt_step_response(time: np.ndarray, cv: np.ndarray,
                          "изменилась — ступенька CV не отработала.")
     Ka = dslope / du
 
+    # Балансный ход CV (при котором уровень «стоит») из уравнения дрейфа:
+    # m0 = Ka*(u0 - balance)  =>  balance = u0 - m0/Ka
+    balance = float(u0) - m0 / Ka if abs(Ka) > 1e-12 else float(u0)
+
     # --- Запаздывание: пересечение двух линий разгона ---
     t_step = float(time[step_index])
     if abs(m0 - m1) < 1e-12:
@@ -297,7 +302,8 @@ def identify_ipdt_step_response(time: np.ndarray, cv: np.ndarray,
     if not np.isfinite(r2) or r2 < MIN_FIT_R2:
         raise ValueError(f"Аппроксимация IPDT неудовлетворительна "
                          f"(R²={r2:.2f}). Проверьте данные.")
-    return IpdtModel(Ka=Ka, tau=tau, method="step", fit_quality=r2, m0=m0)
+    return IpdtModel(Ka=Ka, tau=tau, method="step", fit_quality=r2, m0=m0,
+                     balance=balance)
 
 
 # ------------------------------------------------------------ least squares fit
@@ -609,7 +615,7 @@ def optimize_itae(model, controller_type: str, kp0: float,
                 t, sp, pv, _ = simulate_closed_loop(
                     0.0, 0.0, model.tau, controller_type,
                     kp, ti, td, dt_sim, sim_time, model_type="ipdt",
-                    Ka=model.Ka)
+                    Ka=model.Ka, balance=getattr(model, "balance", None))
             else:
                 t, sp, pv, _ = simulate_closed_loop(
                     model.K, model.T, model.tau, controller_type,

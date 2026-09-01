@@ -174,6 +174,7 @@ def register_routes(app: Flask) -> None:
         if mt == "ipdt":
             save_state(
                 model_type="ipdt", Ka=model.Ka, tau=model.tau, m0=model.m0,
+                balance=model.balance,
                 fit_quality=model.fit_quality, Ku=res.get("Ku"), Tu=res.get("Tu"),
                 method_used=model.method, warnings=res.get("warnings", []),
                 pv_span=data.info.get("pv_span", [None, None]),
@@ -202,6 +203,7 @@ def register_routes(app: Flask) -> None:
                 "model_type": _model_type(),
                 "K": state.get("K"), "T": state.get("T"),
                 "Ka": state.get("Ka"),
+                "balance": state.get("balance", 0.0),
                 "tau": state.get("tau"), "Ku": state.get("Ku"),
                 "Tu": state.get("Tu"),
                 "fit_quality": state.get("fit_quality"),
@@ -264,10 +266,11 @@ def register_routes(app: Flask) -> None:
             if model_ka is not None:
                 state["Ka"] = model_ka
             save_state(model_type="ipdt", Ka=state.get("Ka"), tau=state["tau"],
-                       m0=state.get("m0", 0.0))
+                       m0=state.get("m0", 0.0), balance=state.get("balance", 0.0))
             model = identification.IpdtModel(Ka=state.get("Ka", 0.0),
                                              tau=state["tau"],
-                                             m0=state.get("m0", 0.0))
+                                             m0=state.get("m0", 0.0),
+                                             balance=state.get("balance", 0.0))
         else:
             # Ручное редактирование параметров модели FOPDT (опционально)
             model_k = _num(payload.get("model_k"))
@@ -280,6 +283,23 @@ def register_routes(app: Flask) -> None:
                        tau=state["tau"])
             model = identification.FopdtModel(K=state["K"], T=state["T"],
                                               tau=state["tau"])
+
+        # При ручном редактировании модели (Ka/τ или K/T/τ) критические
+        # параметры контура Ku/Tu должны пересчитываться по актуальной модели —
+        # иначе Зиглер–Николс по замкнутому контуру использует устаревшие
+        # Ku/Tu от предыдущей идентификации.
+        edited = any(_num(payload.get(k)) is not None
+                     for k in ("model_k", "model_t", "model_tau", "model_ka"))
+        if edited:
+            try:
+                if model_type == "ipdt":
+                    ku, tu = identification.critical_from_ipdt(model)
+                else:
+                    ku, tu = identification.critical_from_fopdt(model)
+            except ValueError:
+                ku = tu = None
+            state["Ku"], state["Tu"] = ku, tu
+            save_state(Ku=ku, Tu=tu)
 
         data = _load_processed()
 
@@ -322,7 +342,8 @@ def register_routes(app: Flask) -> None:
             warn_sat_frac=Config.SATURATION_WARN_FRAC,
             overshoot_target=Config.SATURATION_OVERSHOOT_TARGET,
             sp_array=ctx["data"].sp,
-            model_type=ctx["model_type"])
+            model_type=ctx["model_type"],
+            balance=getattr(ctx["model"], "balance", None))
         # Референсная ступенька теперь используется и в основной симуляции
         ctx["sp_start"], ctx["sp_target"] = sim_start_sp, sim_target_sp
         return limited
@@ -341,7 +362,8 @@ def register_routes(app: Flask) -> None:
             sp_start=ctx["sp_start"], sp_target=ctx["sp_target"],
             cv_clip=ctx["cv_clip"], cv_min=ctx["cv_min"], cv_max=ctx["cv_max"],
             pv0=ctx["pv0"], cv0=ctx["cv0"],
-            model_type=mt, Ka=getattr(m, "Ka", None))
+            model_type=mt, Ka=getattr(m, "Ka", None),
+            balance=getattr(m, "balance", None))
         metrics = simulator.quality_metrics(sim[0], sim[1], sim[2], sim[3],
                                             cv_min=ctx["cv_min"],
                                             cv_max=ctx["cv_max"])
@@ -608,6 +630,7 @@ def register_routes(app: Flask) -> None:
         return jsonify({"model_type": state.get("model_type", mt),
                         "K": state.get("K"), "T": state.get("T"),
                         "Ka": state.get("Ka"), "tau": state.get("tau"),
+                        "balance": state.get("balance", 0.0),
                         "Ku": state.get("Ku"), "Tu": state.get("Tu")})
 
     # --------------------------------------------------------------- exports

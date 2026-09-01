@@ -429,9 +429,11 @@ const PIDApp = (() => {
           // Обновляем поля идентифицированными параметрами
           if (r.model_type === "ipdt") {
             $("#model-Ka").val(fmt(r.Ka));
+            $("#sim-cv0").val(fmt(r.balance, 2));   // балансный ход CV
           } else {
             $("#model-K").val(fmt(r.K));
             $("#model-T").val(fmt(r.T, 2));
+            $("#sim-cv0").val("0");
           }
           $("#model-tau").val(fmt(r.tau, 2));
           recalculate();

@@ -69,8 +69,10 @@ def _simulate(K: float, T: float, tau: float,
     integ = 0.0                             # интеграл ошибки
     e_prev = sp[0] - y                      # предыдущая ошибка
     dfilt = 0.0                             # состояние D-фильтра
-    if kp != 0 and model_type != "ipdt":
-        # Начинаем из равновесия: CV = Kp*(e + integ) при e=0 → integ = cv0/Kp
+    # Для IPDT начальный ход CV (cv0) — это балансная точка (уровень «стоит»).
+    # По умолчанию он равен переданному balance (см. simulate_closed_loop),
+    # чтобы u стартовал с баланса и процесс не «проседал» в первую секунду.
+    if kp != 0:
         integ = cv0 / kp
 
     # Точная ZOH-дискретизация на подшаге h: y = a*y + b*u_delayed
@@ -125,8 +127,14 @@ def _simulate(K: float, T: float, tau: float,
         ubuf[-1] = u
         u_delayed = ubuf[0] if delay_steps < len(ubuf) else 0.0
 
+        # Для IPDT объект реагирует на ОТКЛОНЕНИЕ хода CV от балансной точки
+        # (cv0): dPV/dt = Ka*(u - cv0). Так уровень остаётся на месте при
+        # u = cv0 и растёт/падает при отклонении от баланса (и для прямого, и
+        # для обратного действия).
+        proc_u = u_delayed - cv0 if model_type == "ipdt" else u_delayed
+
         # Объект — точная дискретная модель на подшаге
-        y = a * y + b * u_delayed
+        y = a * y + b * proc_u
 
         if k % m == 0:
             j = k // m
@@ -150,7 +158,8 @@ def simulate_closed_loop(K: float, T: float, tau: float, controller_type: str,
                          pv0: float | None = None,
                          cv0: float | None = None,
                          model_type: str = "fopdt",
-                         Ka: float | None = None):
+                         Ka: float | None = None,
+                         balance: float | None = None):
     """
     Симуляция отклика замкнутой системы.
 
@@ -195,6 +204,11 @@ def simulate_closed_loop(K: float, T: float, tau: float, controller_type: str,
     # разойдётся. Коэффициенты настройки задаются по модулю усиления.
     gain = Ka if model_type == "ipdt" else K
     kp_eff = np.sign(gain) * kp
+
+    # Для IPDT стартовый ход CV (балансная точка) — по умолчанию из модели,
+    # иначе оставляем заданное значение (или 0).
+    if model_type == "ipdt" and cv0 is None and balance is not None:
+        cv0 = balance
 
     pv, cv = _simulate(K, T, tau, kp_eff, ti_eff, td_eff, n_filter, time, sp,
                        cv_clip=cv_clip, cv_min=cv_min, cv_max=cv_max,

@@ -127,7 +127,7 @@ def _simulate(state, data, coeffs, ctype, ctx: dict) -> tuple:
         cv_clip=ctx.get("cv_clip", True), cv_min=ctx.get("cv_min", 0.0),
         cv_max=ctx.get("cv_max", 100.0),
         pv0=ctx.get("pv0"), cv0=ctx.get("cv0"),
-        model_type=mt, Ka=state.get("Ka"))
+        model_type=mt, Ka=state.get("Ka"), balance=state.get("balance"))
 
 
 def _plot_sim(sim, metrics=None, title: str = "") -> io.BytesIO:

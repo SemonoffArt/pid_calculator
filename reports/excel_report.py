@@ -103,5 +103,6 @@ def simulator_run(state, data):
         state.get("tau", 0.0), state.get("ctype", "PID"),
         coeffs["Kp"], coeffs.get("Ti"), coeffs.get("Td"),
         dt_sim=max(data.dt / 5.0, 0.01), sim_time=sim_time,
-        sp_array=data.sp, model_type=mt, Ka=state.get("Ka"))
+        sp_array=data.sp, model_type=mt, Ka=state.get("Ka"),
+        balance=state.get("balance"))
     return sim

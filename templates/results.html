@@ -197,11 +197,11 @@
                  value="0">
         </div>
         <div class="col-6">
-          <label for="sim-cv0" class="form-label">CV (начальное)
+          <label for="sim-cv0" class="form-label">CV (начальное{% if state.model_type == 'ipdt' %} / баланс{% endif %})
             <span class="help-q" data-bs-toggle="tooltip"
-              data-bs-title="Стартовое значение хода регулятора в момент t=0. По умолчанию 0.">?</span></label>
+              data-bs-title="Стартовое значение хода регулятора в момент t=0. Для интегрирующего объекта (IPDT) это балансная точка, при которой уровень «стоит» — берётся из идентификации, но можно задать и вручную. По умолчанию 0.">?</span></label>
           <input type="number" step="any" class="form-control" id="sim-cv0"
-                 value="0">
+                 value="{{ '%.4g'|format(0 if state.model_type != 'ipdt' else state.balance) }}">
         </div>
       </div>
       <div class="mb-2">

@@ -326,7 +326,8 @@ def limit_kp_by_saturation(coeffs: dict, model, ctype: str,
                            warn_sat_frac: float = 0.05,
                            overshoot_target: float = 30.0,
                            sp_array: np.ndarray | None = None,
-                           model_type: str = "fopdt") -> dict:
+                           model_type: str = "fopdt",
+                           balance: float | None = None) -> dict:
     """
     Смягчает слишком агрессивный Kp, пока отклик не станет приемлемым.
 
@@ -356,7 +357,8 @@ def limit_kp_by_saturation(coeffs: dict, model, ctype: str,
             sp_array=sp_array,
             sp_start=sp_start, sp_target=sp_target,
             model_type=model_type,
-            Ka=getattr(model, "Ka", None))
+            Ka=getattr(model, "Ka", None),
+            balance=getattr(model, "balance", None))
         return simulator.quality_metrics(t, sp, pv, cv)
 
     def acceptable(kp: float) -> bool:
