@@ -60,6 +60,136 @@ const PIDApp = (() => {
                        xaxis: { title: "Время, с" } }, layout), cfg);
   }
 
+  // Данные последней оценки — для кнопки «Скопировать результаты»
+  let lastAssessmentData = null;
+
+  // График и метрики «Оценки регулирования» по фактическим данным
+  function drawAssessment(assess, raw) {
+    if (!assess || !$("#plot-assessment").length) return;
+    lastAssessmentData = { assess, raw };
+    Plotly.react("plot-assessment", [
+      { x: raw.time, y: raw.sp, name: "SP (задание)", mode: "lines",
+        line: { color: "#e74c3c" } },
+      { x: raw.time, y: raw.pv, name: "PV (факт)", mode: "lines",
+        line: { color: "#2c3e50", width: 3 } },
+      { x: raw.time, y: raw.cv, name: "CV, %", mode: "lines",
+        line: { color: "#18bc9c", width: 1 }, opacity: 0.5 },
+    ], Object.assign({ yaxis: { title: "Значение" },
+                       xaxis: { title: "Время, с" } }, layout), cfg);
+
+    let html = "";
+    if (assess.step_detected) {
+      const settle = assess.settled
+        ? `${fmt(assess.settling_time, 1)} с`
+        : `<span class="text-warning">не достигнуто</span>`;
+      html = `<span class="me-3">Перерегулирование: <b>${fmt(assess.overshoot, 2)} %</b></span>` +
+        `<span class="me-3">Время регулирования: <b>${settle}</b></span>` +
+        `<span>IAE: <b>${fmt(assess.iae, 2)}</b></span>`;
+      if (assess.step_index != null && assess.step_index >= 0
+          && raw.time && raw.time[assess.step_index] != null) {
+        html += `<div class="text-muted mt-1">Ступенька SP в ` +
+          `${fmt(raw.time[assess.step_index], 1)} с; PV: ` +
+          `${fmt(assess.start_pv, 2)} → ${fmt(assess.target_sp, 2)}` +
+          ` (Δ = ${fmt(assess.delta, 2)}), полоса ± ${fmt(assess.band, 2)}</div>`;
+      }
+    } else {
+      html = `<span class="text-warning">Ступенька задания не обнаружена.</span> ` +
+        `<span class="me-3">IAE всего участка: <b>${fmt(assess.iae, 2)}</b></span>`;
+      if (assess.note) html += `<div class="text-muted mt-1">${assess.note}</div>`;
+    }
+    $("#assessment-metrics").html(html);
+  }
+
+  // Загрузка данных и метрик для отдельной страницы «Оценка регулирования»
+  function loadAssessment() {
+    if (!window.PAGE || window.PAGE !== "assessment") return;
+    const spinner = $("#assessment-spinner");
+    const metrics = $("#assessment-metrics");
+    spinner.removeClass("d-none");
+    metrics.html("");
+    $.ajax({
+      url: "/api/assessment",
+      method: "GET",
+    })
+      .done((data) => {
+        if (data.error) {
+          $("#assessment-error").html(
+            `<div class="alert alert-warning">${data.error}</div>`);
+          return;
+        }
+        $("#assessment-error").empty();
+        drawAssessment(data.assessment, data.raw);
+      })
+      .fail((xhr) => {
+        const msg = xhr.responseJSON && xhr.responseJSON.error
+          ? xhr.responseJSON.error : "Ошибка при загрузке данных.";
+        $("#assessment-error").html(
+          `<div class="alert alert-warning">${msg}</div>`);
+      })
+      .always(() => spinner.addClass("d-none"));
+  }
+
+  // Текстовое представление оценки — для буфера обмена
+  function buildAssessmentText() {
+    if (!lastAssessmentData) return "";
+    const { assess, raw } = lastAssessmentData;
+    const file = $("#copy-result-btn").data("file") || "";
+    const lines = ["Оценка регулирования", "-------------------------"];
+    if (file) lines.push("Файл: " + file);
+    if (assess.step_detected) {
+      let stepTxt = "";
+      if (assess.step_index != null && assess.step_index >= 0
+          && raw.time && raw.time[assess.step_index] != null) {
+        stepTxt = " в " + fmt(raw.time[assess.step_index], 1) + " с";
+      }
+      lines.push("Ступенька SP" + stepTxt);
+      if (assess.start_pv != null) {
+        lines.push("PV: " + fmt(assess.start_pv, 2) + " -> "
+          + fmt(assess.target_sp, 2) + " (Δ = " + fmt(assess.delta, 2) + ")");
+      }
+      lines.push("Перерегулирование: " + fmt(assess.overshoot, 2) + " %");
+      lines.push("Время регулирования: "
+        + (assess.settled ? fmt(assess.settling_time, 1) + " с" : "не достигнуто"));
+      lines.push("IAE: " + fmt(assess.iae, 2));
+    } else {
+      lines.push("Ступенька задания не обнаружена");
+      lines.push("IAE (вся запись): " + fmt(assess.iae, 2));
+    }
+    return lines.join("\n");
+  }
+
+  // Резервное копирование через скрытый textarea (старые браузеры / http)
+  function fallbackCopy(text, done) {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); } catch (e) { /* игнорируем */ }
+    document.body.removeChild(ta);
+    if (done) done();
+  }
+
+  function copyResults() {
+    const text = buildAssessmentText();
+    if (!text) return;
+    const btn = $("#copy-result-btn");
+    const done = () => {
+      const original = btn.text();
+      btn.text("Скопировано ✓")
+        .removeClass("btn-outline-primary").addClass("btn-success");
+      setTimeout(() => {
+        btn.text(original).addClass("btn-outline-primary").removeClass("btn-success");
+      }, 2000);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+    } else {
+      fallbackCopy(text, done);
+    }
+  }
+
   function drawModel(mr, raw) {
     const label = currentModelType === "ipdt"
       ? "PV (модель IPDT)" : "PV (модель FOPDT)";
@@ -484,7 +614,15 @@ const PIDApp = (() => {
     if ($("#model-type").length) {
       setModelType($("#model-type").val());
     }
+    // Отдельная страница «Оценка регулирования»
+    if (window.PAGE === "assessment") {
+      loadAssessment();
+    }
+    // Кнопка «Скопировать результаты» (страница оценки)
+    if ($("#copy-result-btn").length) {
+      $("#copy-result-btn").on("click", copyResults);
+    }
   });
 
-  return { recalculate };
+  return { recalculate, loadAssessment };
 })();

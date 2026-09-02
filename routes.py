@@ -12,7 +12,7 @@ from flask import (Flask, flash, jsonify, redirect, render_template, request,
                    send_file, session, url_for)
 
 from config import Config
-from core import data_loader, identification, pid_tuning, simulator
+from core import assessment, data_loader, identification, pid_tuning, simulator
 from models import (clear_state, get_state, load_dataframe, new_session_id,
                     save_dataframe, save_state)
 
@@ -215,6 +215,49 @@ def register_routes(app: Flask) -> None:
                 "norm_scale": state.get("norm_scale"),
             },
         )
+
+    # ------------------------------------------------------ оценка регулирования
+    @app.route("/assessment")
+    def assessment_page():
+        """Отдельная страница: оценка качества регулирования по фактическим данным."""
+        state = get_state()
+        if not state.get("K") and not state.get("Ka"):
+            flash("Сначала загрузите данные процесса.", "warning")
+            return redirect(url_for("index"))
+        return render_template(
+            "assessment.html",
+            state={
+                "upload_name": state.get("upload_name"),
+                "model_type": _model_type(),
+                "normalized": state.get("normalized", False),
+                "norm_scale": state.get("norm_scale"),
+                "info": state.get("info", {}),
+            },
+        )
+
+    @app.route("/api/assessment")
+    def api_assessment():
+        """Данные и метрики оценки регулирования для страницы «Оценка»."""
+        try:
+            data = _load_processed()
+        except FileNotFoundError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            app.logger.exception("Ошибка /api/assessment")
+            return jsonify({"error": f"Внутренняя ошибка: {exc}"}), 500
+
+        assess = assessment.assess_regulation(data)
+        response = {
+            "raw": {
+                "time": data.time.tolist(), "pv": data.pv.tolist(),
+                "sp": data.sp.tolist(), "cv": data.cv.tolist(),
+            },
+            "assessment": assess,
+            "info": data.info,
+        }
+        return jsonify(_finite(response))
 
     # ------------------------------------------------------------- AJAX API
     @app.route("/api/calculate", methods=["POST"])

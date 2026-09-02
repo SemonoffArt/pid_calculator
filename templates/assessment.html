@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Оценка регулирования — ПИД-калькулятор{% endblock %}
+
+{% block content %}
+<h1 class="mb-2">Оценка регулирования</h1>
+<p class="text-muted mb-3">
+  {% if state.upload_name %}Файл: <b>{{ state.upload_name }}</b>{% else %}Данные процесса{% endif %}
+  {% if state.info.get('points') %}&nbsp;·&nbsp;{{ state.info.get('points') }} точек, шаг
+    {{ "%.3g"|format(state.info.get('dt')) }} с{% endif %}
+  {% if state.info.get('step_signal') %}&nbsp;·&nbsp;ступенька по {{ state.info.get('step_signal') }}{% endif %}
+  {% if state.normalized and state.norm_scale %}
+    <span class="badge text-bg-success ms-1">нормализовано (0–100 %, масштаб {{ "%.3g"|format(state.norm_scale) }})</span>
+  {% endif %}
+</p>
+
+<div id="assessment-error"></div>
+
+<div class="card shadow-sm p-3 border-start border-4 border-primary">
+  <h5 class="mb-3">Переходный процесс по фактическим данным
+    <span class="help-q" data-bs-toggle="tooltip"
+      data-bs-title="Анализ фактической записи PV/SP/CV из загруженного CSV. Находится ступенька задания (SP), после неё выделяется переходный процесс и рассчитываются показатели качества: перерегулирование (выброс PV за задание), время регулирования (вход в зону ±2 % от задания навсегда) и IAE (интеграл модуля ошибки).">?</span>
+  </h5>
+  <div id="plot-assessment" style="height:360px;"></div>
+  <div class="d-flex align-items-center gap-2">
+    <div class="spinner-border spinner-border-sm text-primary d-none mt-2" id="assessment-spinner"
+         role="status"><span class="visually-hidden">Загрузка…</span></div>
+    <div id="assessment-metrics" class="small mt-2"></div>
+  </div>
+  <div class="d-flex justify-content-end mt-3">
+    <button type="button" class="btn btn-outline-primary btn-sm" id="copy-result-btn"
+            data-file="{{ state.upload_name or '' }}">Скопировать результаты</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>window.PAGE = "assessment";</script>
+<script>
+  $(function () { PIDApp.loadAssessment(); });
+</script>
+{% endblock %}
