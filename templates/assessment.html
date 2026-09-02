@@ -15,62 +15,91 @@
 
 <div id="assessment-error"></div>
 
-<div class="card shadow-sm p-3">
-  <h5 class="mb-3">Переходный процесс по фактическим данным
-    <span class="help-q" data-bs-toggle="tooltip"
-      data-bs-title="Анализ фактической записи PV/SP/CV из загруженного CSV. Находится ступенька задания (SP), после неё выделяется переходный процесс и рассчитываются показатели качества: перерегулирование (выброс PV за задание), время регулирования (вход в зону ±2 % от задания навсегда) и IAE (интеграл модуля ошибки).">?</span>
-  </h5>
-  <div id="plot-assessment" style="height:360px;"></div>
-  <div class="d-flex align-items-center gap-2">
-    <div class="spinner-border spinner-border-sm text-primary d-none mt-2" id="assessment-spinner"
-         role="status"><span class="visually-hidden">Загрузка…</span></div>
-    <div id="assessment-metrics" class="small mt-2"></div>
+<div class="row g-4">
+  <!-- Панель управления -->
+  <div class="col-lg-4">
+    <div class="card shadow-sm p-3 mb-3">
+      <h5 class="mb-3">Настройки оценки
+        <span class="help-q" data-bs-toggle="tooltip"
+          data-bs-title="Параметры расчёта показателей качества по фактическим данным. Полоса установления — допуск, при котором PV считается вышедшим на задание (в % от изменения Δ). Порог ступеньки — минимальный скачок SP, который распознаётся как изменение задания (в % от размаха сигнала).">?</span>
+      </h5>
+      <div class="mb-3">
+        <label for="assessment-band" class="form-label">Полоса установления, % от Δ</label>
+        <input type="number" class="form-control" id="assessment-band"
+               value="2" min="0.1" max="50" step="0.1">
+        <div class="form-text">Допуск ± от изменения Δ (по умолчанию 2 %)</div>
+      </div>
+      <div class="mb-3">
+        <label for="assessment-step-threshold" class="form-label">Порог ступеньки SP, %</label>
+        <input type="number" class="form-control" id="assessment-step-threshold"
+               value="5" min="0.1" max="50" step="0.1">
+        <div class="form-text">Мин. скачок SP, распознаваемый как задание (по умолчанию 5 %)</div>
+      </div>
+      <button type="button" class="btn btn-primary w-100" id="assessment-recalc">
+        Пересчитать</button>
+    </div>
   </div>
-  <div class="d-flex justify-content-end mt-3">
-    <button type="button" class="btn btn-outline-primary btn-sm" id="copy-result-btn"
-            data-file="{{ state.upload_name or '' }}">Скопировать результаты</button>
-  </div>
-</div>
 
-<!-- Все полученные результаты (заполняются динамически) -->
-<div class="card shadow-sm p-3 mb-3">
-  <h5 class="mb-3">Все полученные результаты</h5>
-  <div id="assessment-details"></div>
-</div>
+  <!-- Графики и результаты -->
+  <div class="col-lg-8">
+    <div class="card shadow-sm p-3 mb-3">
+      <h5 class="mb-3">Переходный процесс по фактическим данным
+        <span class="help-q" data-bs-toggle="tooltip"
+          data-bs-title="Анализ фактической записи PV/SP/CV из загруженного CSV. Находится ступенька задания (SP), после неё выделяется переходный процесс и рассчитываются показатели качества: перерегулирование (выброс PV за задание), время регулирования (вход в зону ±2 % от задания навсегда) и IAE (интеграл модуля ошибки).">?</span>
+      </h5>
+      <div id="plot-assessment" style="height:360px;"></div>
+      <div class="d-flex align-items-center gap-2">
+        <div class="spinner-border spinner-border-sm text-primary d-none mt-2" id="assessment-spinner"
+             role="status"><span class="visually-hidden">Загрузка…</span></div>
+        <div id="assessment-metrics" class="small mt-2"></div>
+      </div>
+      <div class="d-flex justify-content-end mt-3">
+        <button type="button" class="btn btn-outline-primary btn-sm" id="copy-result-btn"
+                data-file="{{ state.upload_name or '' }}">Скопировать результаты</button>
+      </div>
+    </div>
 
-<!-- Как происходит оценка -->
-<div class="card shadow-sm p-3 mb-3">
-  <h5 class="mb-3">Как происходит оценка</h5>
-  <div class="small">
-    <p>Оценка качества регулирования выполняется по фактической записи
-    <b>PV, SP, CV</b> из загруженного CSV-файла. Сначала находится ступенька
-    задания, затем по переходному процессу после неё рассчитываются три
-    показателя качества:</p>
-    <ol>
-      <li><b>Обнаружение ступеньки задания.</b> В сигнале <b>SP</b> ищется
-        наибольший скачок (не менее 5&nbsp;% от размаха сигнала). Если
-        ступеньки нет или она слишком близка к краю записи — переходный
-        процесс не выделяется, рассчитывается только интегральная ошибка по
-        всей записи (IAE).</li>
-      <li><b>Опорная и целевая точки.</b> <i>Базовая точка</i> — медиана PV в
-        окне перед ступенькой; <i>целевая уставка</i> — медиана SP после
-        ступеньки. Изменение Δ = SP<sub>цель</sub> − PV<sub>база</sub>.</li>
-      <li><b>Перерегулирование (overshoot).</b> Максимальный выброс PV за
-        задание, нормированный на изменение Δ в процентах:
-        \[ \text{OS}=\max\Bigl(\frac{\text{PV}(t)-\text{PV}_0}{\Delta}-1,\;0\Bigr)\cdot 100\% \]</li>
-      <li><b>Время регулирования (settling time).</b> Момент, когда PV
-        окончательно входит в полосу ±2&nbsp;% от Δ и в ней остаётся до конца
-        записи. Если этого так и не произошло — время регулирования считается
-        не достигнутым.</li>
-      <li><b>IAE</b> — интеграл модуля ошибки от момента ступеньки до конца
-        записи:
-        \[ \text{IAE}=\int \bigl|\text{SP}(t)-\text{PV}(t)\bigr|\,dt \]</li>
-    </ol>
-    <p class="text-muted mb-0">Эти показатели описывают, насколько хорошо
-    регулятор отработал изменение задания: <b>перерегулирование</b> — насколько
-    агрессивно (выброс за уставку), <b>время регулирования</b> — насколько
-    быстро система вышла в заданный диапазон, <b>IAE</b> — суммарную «площадь»
-    отклонений за всё время переходного процесса.</p>
+    <!-- Все полученные результаты (заполняются динамически) -->
+    <div class="card shadow-sm p-3 mb-3">
+      <h5 class="mb-3">Все полученные результаты</h5>
+      <div id="assessment-details"></div>
+    </div>
+
+    <!-- Как происходит оценка -->
+    <div class="card shadow-sm p-3 mb-3">
+      <h5 class="mb-3">Как происходит оценка</h5>
+      <div class="small">
+        <p>Оценка качества регулирования выполняется по фактической записи
+        <b>PV, SP, CV</b> из загруженного CSV-файла. Сначала находится ступенька
+        задания, затем по переходному процессу после неё рассчитываются три
+        показателя качества:</p>
+        <ol>
+          <li><b>Обнаружение ступеньки задания.</b> В сигнале <b>SP</b> ищется
+            наибольший скачок (не менее 5&nbsp;% от размаха сигнала). Если
+            ступеньки нет или она слишком близка к краю записи — переходный
+            процесс не выделяется, рассчитывается только интегральная ошибка по
+            всей записи (IAE).</li>
+          <li><b>Опорная и целевая точки.</b> <i>Базовая точка</i> — медиана PV в
+            окне перед ступенькой; <i>целевая уставка</i> — медиана SP после
+            ступеньки. Изменение Δ = SP<sub>цель</sub> − PV<sub>база</sub>.</li>
+          <li><b>Перерегулирование (overshoot).</b> Максимальный выброс PV за
+            задание, нормированный на изменение Δ в процентах:
+            \[ \text{OS}=\max\Bigl(\frac{\text{PV}(t)-\text{PV}_0}{\Delta}-1,\;0\Bigr)\cdot 100\% \]</li>
+          <li><b>Время регулирования (settling time).</b> Момент, когда PV
+            окончательно входит в полосу ±2&nbsp;% от Δ и в ней остаётся до конца
+            записи. Если этого так и не произошло — время регулирования считается
+            не достигнутым.</li>
+          <li><b>IAE</b> — интеграл модуля ошибки от момента ступеньки до конца
+            записи:
+            \[ \text{IAE}=\int \bigl|\text{SP}(t)-\text{PV}(t)\bigr|\,dt \]</li>
+        </ol>
+        <p class="text-muted mb-0">Эти показатели описывают, насколько хорошо
+        регулятор отработал изменение задания: <b>перерегулирование</b> — насколько
+        агрессивно (выброс за уставку), <b>время регулирования</b> — насколько
+        быстро система вышла в заданный диапазон, <b>IAE</b> — суммарную «площадь»
+        отклонений за всё время переходного процесса.</p>
+      </div>
+    </div>
   </div>
 </div>
 {% endblock %}

@@ -158,7 +158,8 @@ const PIDApp = (() => {
       add("PV до ступеньки (базовая)", fmt(assess.start_pv, 2));
       add("Задание после ступеньки (SP)", fmt(assess.target_sp, 2));
       add("Изменение Δ", fmt(assess.delta, 2));
-      add("Полоса установления ±", fmt(assess.band, 2) + " (2 % от Δ)");
+      add("Полоса установления ±", fmt(assess.band, 2)
+        + ` (${($("#assessment-band").val() || "2")} % от Δ)`);
       add("Перерегулирование", fmt(assess.overshoot, 2) + " %");
       add("Время регулирования", assess.settled
         ? fmt(assess.settling_time, 1) + " с" : "не достигнуто");
@@ -170,6 +171,16 @@ const PIDApp = (() => {
       + `<tbody>${rows.join("")}</tbody></table></div>`);
   }
 
+  // Параметры настройки оценки из карточки «Настройки оценки»
+  function assessmentParams() {
+    const q = [];
+    const band = parseFloat($("#assessment-band").val());
+    if (isFinite(band) && band > 0) q.push("band=" + band);
+    const step = parseFloat($("#assessment-step-threshold").val());
+    if (isFinite(step) && step > 0) q.push("step_threshold=" + step);
+    return q.length ? "?" + q.join("&") : "";
+  }
+
   // Загрузка данных и метрик для отдельной страницы «Оценка регулирования»
   function loadAssessment() {
     if (!window.PAGE || window.PAGE !== "assessment") return;
@@ -178,7 +189,7 @@ const PIDApp = (() => {
     spinner.removeClass("d-none");
     metrics.html("");
     $.ajax({
-      url: "/api/assessment",
+      url: "/api/assessment" + assessmentParams(),
       method: "GET",
     })
       .done((data) => {
@@ -691,6 +702,10 @@ const PIDApp = (() => {
     // Кнопка «Скопировать результаты» (страница оценки)
     if ($("#copy-result-btn").length) {
       $("#copy-result-btn").on("click", copyResults);
+    }
+    // Кнопка «Пересчитать» — пересчёт оценки с изменёнными настройками
+    if ($("#assessment-recalc").length) {
+      $("#assessment-recalc").on("click", loadAssessment);
     }
   });
 

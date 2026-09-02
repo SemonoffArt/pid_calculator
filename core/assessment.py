@@ -19,18 +19,30 @@ from core.data_loader import ProcessData, detect_sp_step
 
 # Полоса времени регулирования — доля от величины ступеньки SP
 SETTLING_BAND_FRAC = 0.02
+# Порог обнаружения ступеньки SP — доля от размаха сигнала
+STEP_THRESHOLD = 0.05
 
 
-def assess_regulation(data: ProcessData, band_frac: float = SETTLING_BAND_FRAC) -> dict:
+def assess_regulation(data: ProcessData, band_frac: float | None = SETTLING_BAND_FRAC,
+                      step_threshold: float | None = STEP_THRESHOLD) -> dict:
     """
     Оценка качества регулирования по реальной записи PV/SP/CV.
+
+    band_frac — полоса установления как доля от величины ступеньки SP
+    (по умолчанию 2 %). step_threshold — порог обнаружения ступеньки SP как
+    доля от размаха сигнала (по умолчанию 5 %). Если передано None — берётся
+    значение по умолчанию.
 
     Возвращает словарь с метриками (overshoot, settling_time, iae) и контекстом
     (обнаружена ли ступенька SP, её момент, базовая и целевая точки).
     Если ступенька не обнаружена — вычисляется только IAE по всему участку.
     """
     time, sp, pv, cv = data.time, data.sp, data.pv, data.cv
-    step_index = detect_sp_step(sp)
+    if band_frac is None or band_frac <= 0:
+        band_frac = SETTLING_BAND_FRAC
+    if step_threshold is None or step_threshold <= 0:
+        step_threshold = STEP_THRESHOLD
+    step_index = detect_sp_step(sp, threshold=step_threshold)
 
     base = {
         "step_detected": False,

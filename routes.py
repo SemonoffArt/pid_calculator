@@ -27,6 +27,24 @@ def _num(value) -> float | None:
         return None
 
 
+def _pct_param(raw, default: float | None = None,
+               lo: float = 0.1, hi: float = 50.0) -> float | None:
+    """Парсит входной параметр в процентах в долю (0..1).
+
+    Возвращает default (обычно None — использовать значение по умолчанию),
+    если значение пустое, нечисловое или вне допустимого диапазона [lo, hi].
+    """
+    if raw is None or str(raw).strip() == "":
+        return default
+    try:
+        val = float(str(raw).replace(",", "."))
+    except (TypeError, ValueError):
+        return default
+    if not (lo <= val <= hi):
+        return default
+    return val / 100.0
+
+
 def _finite(value):
     """
     Рекурсивно заменяет NaN/Infinity на None.
@@ -237,7 +255,12 @@ def register_routes(app: Flask) -> None:
 
     @app.route("/api/assessment")
     def api_assessment():
-        """Данные и метрики оценки регулирования для страницы «Оценка»."""
+        """Данные и метрики оценки регулирования для страницы «Оценка».
+
+        Необязательные query-параметры (в %):
+          - band — полоса установления (± % от изменения Δ);
+          - step_threshold — порог обнаружения ступеньки SP (% размаха).
+        """
         try:
             data = _load_processed()
         except FileNotFoundError as exc:
@@ -248,7 +271,11 @@ def register_routes(app: Flask) -> None:
             app.logger.exception("Ошибка /api/assessment")
             return jsonify({"error": f"Внутренняя ошибка: {exc}"}), 500
 
-        assess = assessment.assess_regulation(data)
+        band_frac = _pct_param(request.args.get("band"), default=None)
+        step_threshold = _pct_param(request.args.get("step_threshold"),
+                                    default=None)
+        assess = assessment.assess_regulation(
+            data, band_frac=band_frac, step_threshold=step_threshold)
         response = {
             "raw": {
                 "time": data.time.tolist(), "pv": data.pv.tolist(),
