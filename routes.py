@@ -27,6 +27,17 @@ def _num(value) -> float | None:
         return None
 
 
+def _int_param(raw, default: int | None = None) -> int | None:
+    """Парсит целочисленный query-параметр; возвращает default при неудаче."""
+    if raw is None or str(raw).strip() == "":
+        return default
+    try:
+        val = int(float(str(raw).replace(",", ".")))
+    except (TypeError, ValueError):
+        return default
+    return val
+
+
 def _pct_param(raw, default: float | None = None,
                lo: float = 0.1, hi: float = 50.0) -> float | None:
     """Парсит входной параметр в процентах в долю (0..1).
@@ -274,14 +285,19 @@ def register_routes(app: Flask) -> None:
         band_frac = _pct_param(request.args.get("band"), default=None)
         step_threshold = _pct_param(request.args.get("step_threshold"),
                                     default=None)
+        step_index = _int_param(request.args.get("step_index"))
         assess = assessment.assess_regulation(
-            data, band_frac=band_frac, step_threshold=step_threshold)
+            data, band_frac=band_frac, step_threshold=step_threshold,
+            step_index=step_index)
+        steps = [{"index": i, "time": float(data.time[i])}
+                 for i in assess.get("step_indices", [])]
         response = {
             "raw": {
                 "time": data.time.tolist(), "pv": data.pv.tolist(),
                 "sp": data.sp.tolist(), "cv": data.cv.tolist(),
             },
             "assessment": assess,
+            "steps": steps,
             "info": data.info,
         }
         return jsonify(_finite(response))

@@ -95,8 +95,8 @@ const PIDApp = (() => {
     } else {
       html = `<span class="text-warning">Ступенька задания не обнаружена.</span> ` +
         `<span class="me-3">IAE всего участка: <b>${fmt(assess.iae, 2)}</b></span>`;
-      if (assess.note) html += `<div class="text-muted mt-1">${assess.note}</div>`;
     }
+    if (assess.note) html += `<div class="text-muted mt-1">${assess.note}</div>`;
     $("#assessment-metrics").html(html);
     renderAssessmentDetails(assess, raw);
   }
@@ -155,6 +155,8 @@ const PIDApp = (() => {
           && raw.time[assess.step_index] != null) {
         add("Момент ступеньки", fmt(raw.time[assess.step_index], 1) + " с");
       }
+      add("Ступенька SP (выбор)", assess.step_source === "manual"
+        ? "вручную" : "авто (последняя)");
       add("PV до ступеньки (базовая)", fmt(assess.start_pv, 2));
       add("Задание после ступеньки (SP)", fmt(assess.target_sp, 2));
       add("Изменение Δ", fmt(assess.delta, 2));
@@ -178,7 +180,32 @@ const PIDApp = (() => {
     if (isFinite(band) && band > 0) q.push("band=" + band);
     const step = parseFloat($("#assessment-step-threshold").val());
     if (isFinite(step) && step > 0) q.push("step_threshold=" + step);
+    const stepIdx = $("#assessment-step").val();
+    if (stepIdx && stepIdx !== "auto") q.push("step_index=" + stepIdx);
     return q.length ? "?" + q.join("&") : "";
+  }
+
+  // Заполнение выпадающего списка «Ступенька SP» из обнаруженных ступенек
+  function renderStepSelect(steps) {
+    const sel = $("#assessment-step");
+    if (!sel.length) return;
+    const prev = sel.val();
+    if (!steps || !steps.length) {
+      sel.html(`<option value="auto">Авто (последняя)</option>`).val("auto");
+      return;
+    }
+    const opts = [`<option value="auto">Авто (последняя)</option>`];
+    steps.forEach(s => {
+      opts.push(`<option value="${s.index}">${fmt(s.time, 1)} с</option>`);
+    });
+    sel.html(opts.join(""));
+    // Сохраняем выбранную ступеньку, если она по-прежнему доступна
+    if (prev && prev !== "auto"
+        && steps.some(s => String(s.index) === prev)) {
+      sel.val(prev);
+    } else {
+      sel.val("auto");
+    }
   }
 
   // Загрузка данных и метрик для отдельной страницы «Оценка регулирования»
@@ -199,6 +226,7 @@ const PIDApp = (() => {
           return;
         }
         $("#assessment-error").empty();
+        if (data.steps) renderStepSelect(data.steps);
         drawAssessment(data.assessment, data.raw);
       })
       .fail((xhr) => {
