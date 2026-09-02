@@ -98,6 +98,76 @@ const PIDApp = (() => {
       if (assess.note) html += `<div class="text-muted mt-1">${assess.note}</div>`;
     }
     $("#assessment-metrics").html(html);
+    renderAssessmentDetails(assess, raw);
+  }
+
+  // Качественная интерпретация полученных результатов
+  function buildInterpretation(a) {
+    const b = (cls, txt) =>
+      `<div class="alert alert-${cls} py-2 px-3 mb-2 small">${txt}</div>`;
+    if (!a.step_detected) {
+      return b("warning", "Ступенька задания не обнаружена или слишком близка к "
+        + "краю записи — переходный процесс не выделен, поэтому "
+        + "перерегулирование и время регулирования не определены. Рассчитан IAE "
+        + "по всей записи." + (a.note ? " " + a.note : ""));
+    }
+    if (!a.settled) {
+      return b("warning", `Процесс не вышел на установившийся режим за время `
+        + `записи: PV не вошёл в полосу ±${fmt(a.band, 2)} и не удержался в ней. `
+        + `Время регулирования не определено. Перерегулирование: `
+        + `${fmt(a.overshoot, 2)} %.`);
+    }
+    let cls, txt;
+    if (a.overshoot <= 2) {
+      cls = "success";
+      txt = "Отличное качество: перерегулирование ≤ 2 % — контур быстро и " +
+        "плавно выходит на задание без заметного выброса.";
+    } else if (a.overshoot <= 10) {
+      cls = "info";
+      txt = `Хорошее качество: умеренное перерегулирование `
+        + `${fmt(a.overshoot, 2)} % — допустимо для большинства процессов.`;
+    } else if (a.overshoot <= 25) {
+      cls = "warning";
+      txt = `Заметное перерегулирование ${fmt(a.overshoot, 2)} % — контур `
+        + "чувствительный. Рассмотрите снижение Kp или более консервативный "
+        + "метод настройки (IMC, CHR-0).";
+    } else {
+      cls = "danger";
+      txt = `Высокое перерегулирование ${fmt(a.overshoot, 2)} % — контур может `
+        + "раскачиваться. Снизьте Kp или перейдите на методы без "
+        + "перерегулирования (CHR-0, IMC с большим λ).";
+    }
+    return b(cls, txt);
+  }
+
+  // Таблица «Все полученные результаты»
+  function renderAssessmentDetails(assess, raw) {
+    const el = $("#assessment-details");
+    if (!el.length) return;
+    const rows = [];
+    const add = (k, v) => rows.push(`<tr><th>${k}</th><td>${v}</td></tr>`);
+
+    add("Длительность записи", fmt(assess.duration, 1) + " с");
+    add("Ступенька задания (SP)", assess.step_detected
+      ? "обнаружена" : "не обнаружена");
+    if (assess.step_detected) {
+      if (assess.step_index != null && raw.time
+          && raw.time[assess.step_index] != null) {
+        add("Момент ступеньки", fmt(raw.time[assess.step_index], 1) + " с");
+      }
+      add("PV до ступеньки (базовая)", fmt(assess.start_pv, 2));
+      add("Задание после ступеньки (SP)", fmt(assess.target_sp, 2));
+      add("Изменение Δ", fmt(assess.delta, 2));
+      add("Полоса установления ±", fmt(assess.band, 2) + " (2 % от Δ)");
+      add("Перерегулирование", fmt(assess.overshoot, 2) + " %");
+      add("Время регулирования", assess.settled
+        ? fmt(assess.settling_time, 1) + " с" : "не достигнуто");
+    }
+    add("IAE", fmt(assess.iae, 2));
+
+    el.html(buildInterpretation(assess)
+      + `<div class="table-responsive"><table class="table table-sm table-striped mb-0">`
+      + `<tbody>${rows.join("")}</tbody></table></div>`);
   }
 
   // Загрузка данных и метрик для отдельной страницы «Оценка регулирования»
