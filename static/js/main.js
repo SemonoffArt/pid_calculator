@@ -228,6 +228,7 @@ const PIDApp = (() => {
         $("#assessment-error").empty();
         if (data.steps) renderStepSelect(data.steps);
         drawAssessment(data.assessment, data.raw);
+        $("#save-compare-btn").prop("disabled", false);
       })
       .fail((xhr) => {
         const msg = xhr.responseJSON && xhr.responseJSON.error
@@ -236,6 +237,144 @@ const PIDApp = (() => {
           `<div class="alert alert-warning">${msg}</div>`);
       })
       .always(() => spinner.addClass("d-none"));
+  }
+
+  // -------------------- Сохранённые сравнения (localStorage) --------------------
+  const SAVED_KEY = "pid_assessment_saved";
+  const MAX_SAVED = 20;              // лимит числа снимков (старые вытесняются)
+  const DOWNSAMPLE_MAX = 500;        // макс. точек на серию в сохранённом графике
+
+  function getSaved() {
+    try { return JSON.parse(localStorage.getItem(SAVED_KEY)) || []; }
+    catch (e) { return []; }
+  }
+
+  function setSaved(list) {
+    try {
+      localStorage.setItem(SAVED_KEY, JSON.stringify(list));
+      return true;
+    } catch (e) {
+      alert("Не удалось сохранить: переполнено хранилище браузера.");
+      return false;
+    }
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  function fmtNow() {
+    const d = new Date();
+    const p = n => String(n).padStart(2, "0");
+    return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()} `
+      + `${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+
+  // Равномерное прореживание индексов до ~max точек (с сохранением хвоста)
+  function sampleIndices(arr, max) {
+    const n = arr.length;
+    if (n <= max) return Array.from({ length: n }, (_, i) => i);
+    const step = Math.ceil(n / max);
+    const idx = [];
+    for (let i = 0; i < n; i += step) idx.push(i);
+    if (idx[idx.length - 1] !== n - 1) idx.push(n - 1);
+    return idx;
+  }
+
+  function buildSavedItem() {
+    const { assess, raw } = lastAssessmentData;
+    const idx = sampleIndices(raw.time, DOWNSAMPLE_MAX);
+    const pick = arr => idx.map(i => arr[i]);
+    return {
+      id: Date.now(),
+      saved_at: fmtNow(),
+      filename: $("#copy-result-btn").data("file") || "",
+      settings: {
+        band: $("#assessment-band").val(),
+        step_threshold: $("#assessment-step-threshold").val(),
+        step_source: assess.step_source,
+        step_index: assess.step_index,
+      },
+      assessment: {
+        step_detected: assess.step_detected,
+        step_index: assess.step_index,
+        step_time: (assess.step_index != null && raw.time
+          && raw.time[assess.step_index] != null) ? raw.time[assess.step_index] : null,
+        start_pv: assess.start_pv, target_sp: assess.target_sp, delta: assess.delta,
+        overshoot: assess.overshoot, settling_time: assess.settling_time,
+        settled: assess.settled, band: assess.band, iae: assess.iae,
+        duration: assess.duration, note: assess.note, step_source: assess.step_source,
+      },
+      raw: { time: pick(raw.time), pv: pick(raw.pv), sp: pick(raw.sp), cv: pick(raw.cv) },
+    };
+  }
+
+  function drawSavedPlot(divId, raw) {
+    Plotly.react(divId, [
+      { x: raw.time, y: raw.sp, name: "SP (задание)", mode: "lines",
+        line: { color: "#e74c3c" } },
+      { x: raw.time, y: raw.pv, name: "PV (факт)", mode: "lines",
+        line: { color: "#2c3e50", width: 2 } },
+      { x: raw.time, y: raw.cv, name: "CV, %", mode: "lines",
+        line: { color: "#18bc9c", width: 1 }, opacity: 0.5 },
+    ], Object.assign({ yaxis: { title: "Значение" },
+                       xaxis: { title: "Время, с" } }, layout), cfg);
+  }
+
+  function renderSavedAssessments() {
+    const card = $("#saved-card"), container = $("#saved-assessments");
+    if (!card.length || !container.length) return;
+    const items = getSaved();
+    if (!items.length) { card.hide(); container.empty(); return; }
+    card.show();
+    container.empty();
+    items.forEach(item => {
+      const m = item.assessment;
+      const divId = "saved-plot-" + item.id;
+      const settle = m.settled ? fmt(m.settling_time, 1) + " с" : "не достигнуто";
+      let stepTxt = "";
+      if (m.step_detected && m.step_time != null) {
+        stepTxt = ` · ступенька ${fmt(m.step_time, 1)} с`;
+      }
+      const note = m.note
+        ? `<div class="text-muted small mt-1">${escapeHtml(m.note)}</div>` : "";
+      const el = $("<div class='card shadow-sm p-3 mb-3 saved-compare-card'></div>");
+      el.html(
+        `<div class="d-flex justify-content-between align-items-start">
+           <h6 class="mb-1">📊 ${escapeHtml(item.filename || "файл")}
+             <span class="text-muted small">· ${escapeHtml(item.saved_at || "")}</span></h6>
+           <button type="button" class="btn btn-outline-danger btn-sm" data-del="${item.id}"
+                   title="Удалить">🗑</button>
+         </div>
+         <div id="${divId}" style="height:220px;"></div>
+         <div class="small text-muted mt-2">
+           Перерегулирование: <b>${fmt(m.overshoot, 2)} %</b> ·
+           Время регулирования: <b>${settle}</b> ·
+           IAE: <b>${fmt(m.iae, 2)}</b>${stepTxt}
+         </div>${note}`);
+      container.append(el);
+      drawSavedPlot(divId, item.raw);
+    });
+  }
+
+  function saveComparison() {
+    if (!lastAssessmentData) return;
+    const items = getSaved();
+    items.unshift(buildSavedItem());
+    if (items.length > MAX_SAVED) items.length = MAX_SAVED;
+    if (!setSaved(items)) return;
+    renderSavedAssessments();
+    const btn = $("#save-compare-btn");
+    const original = btn.text();
+    btn.text("Сохранено ✓");
+    setTimeout(() => btn.text(original), 2000);
+  }
+
+  function deleteSaved(id) {
+    const items = getSaved().filter(i => String(i.id) !== String(id));
+    setSaved(items);
+    renderSavedAssessments();
   }
 
   // Текстовое представление оценки — для буфера обмена
@@ -734,6 +873,21 @@ const PIDApp = (() => {
     // Кнопка «Пересчитать» — пересчёт оценки с изменёнными настройками
     if ($("#assessment-recalc").length) {
       $("#assessment-recalc").on("click", loadAssessment);
+    }
+    // Кнопка «Сохранить для сравнения» (страница оценки)
+    if ($("#save-compare-btn").length) {
+      $("#save-compare-btn").on("click", saveComparison);
+    }
+    // Удаление сохранённой карточки (делегирование)
+    if ($("#saved-assessments").length) {
+      $("#saved-assessments").on("click", "[data-del]", function () {
+        deleteSaved($(this).data("del"));
+      });
+    }
+    // Отрисовка сохранённых сравнений при открытии страницы
+    // (переживают загрузку нового CSV, т.к. хранятся в localStorage)
+    if (window.PAGE === "assessment") {
+      renderSavedAssessments();
     }
   });
 

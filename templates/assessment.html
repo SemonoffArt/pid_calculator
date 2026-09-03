@@ -60,7 +60,9 @@
              role="status"><span class="visually-hidden">Загрузка…</span></div>
         <div id="assessment-metrics" class="small mt-2"></div>
       </div>
-      <div class="d-flex justify-content-end mt-3">
+      <div class="d-flex justify-content-end gap-2 mt-3">
+        <button type="button" class="btn btn-outline-success btn-sm" id="save-compare-btn"
+                disabled>Сохранить для сравнения</button>
         <button type="button" class="btn btn-outline-primary btn-sm" id="copy-result-btn"
                 data-file="{{ state.upload_name or '' }}">Скопировать результаты</button>
       </div>
@@ -70,6 +72,12 @@
     <div class="card shadow-sm p-3 mb-3">
       <h5 class="mb-3">Все полученные результаты</h5>
       <div id="assessment-details"></div>
+    </div>
+
+    <!-- Сохранённые сравнения -->
+    <div class="card shadow-sm p-3 mb-3" id="saved-card" style="display:none;">
+      <h5 class="mb-3">Сохранённые сравнения</h5>
+      <div id="saved-assessments"></div>
     </div>
 
     <!-- Как происходит оценка -->
