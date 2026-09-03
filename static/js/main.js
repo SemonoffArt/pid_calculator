@@ -380,6 +380,14 @@ const PIDApp = (() => {
     renderAssessmentCompareTable();
   }
 
+  function clearAllSaved() {
+    if (!getSaved().length) return;
+    if (!confirm("Удалить все сохранённые сравнения?")) return;
+    setSaved([]);
+    renderSavedAssessments();
+    renderAssessmentCompareTable();
+  }
+
   // ----------------- Сравнение оценок (текущая + сохранённые) -----------------
   function assessmentRows() {
     const rows = [];
@@ -976,6 +984,10 @@ const PIDApp = (() => {
     // Кнопка «Скопировать результаты» в карточке сравнения оценок
     if ($("#compare-copy-btn").length) {
       $("#compare-copy-btn").on("click", copyCompare);
+    }
+    // Кнопка «Удалить всё» — очистка всех сохранённых сравнений
+    if ($("#compare-clear-btn").length) {
+      $("#compare-clear-btn").on("click", clearAllSaved);
     }
   });
 
