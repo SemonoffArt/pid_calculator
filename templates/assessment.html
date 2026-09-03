@@ -74,6 +74,26 @@
       <div id="assessment-details"></div>
     </div>
 
+    <!-- Сравнение оценок (текущая + сохранённые) -->
+    <div class="card shadow-sm p-3 mb-3" id="compare-card" style="display:none;">
+      <div class="d-flex justify-content-between align-items-start mb-2">
+        <h5 class="mb-0">Сравнение оценок регулирования</h5>
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="compare-copy-btn">
+          Скопировать результаты</button>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm table-striped" id="assessment-compare-table">
+          <thead>
+            <tr>
+              <th>Файл</th><th>Ступенька, с</th>
+              <th>Перерегул., %</th><th>Время регул., с</th><th>IAE</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- Сохранённые сравнения -->
     <div class="card shadow-sm p-3 mb-3" id="saved-card" style="display:none;">
       <h5 class="mb-3">Сохранённые сравнения</h5>

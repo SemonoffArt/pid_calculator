@@ -229,6 +229,7 @@ const PIDApp = (() => {
         if (data.steps) renderStepSelect(data.steps);
         drawAssessment(data.assessment, data.raw);
         $("#save-compare-btn").prop("disabled", false);
+        renderAssessmentCompareTable();
       })
       .fail((xhr) => {
         const msg = xhr.responseJSON && xhr.responseJSON.error
@@ -365,6 +366,7 @@ const PIDApp = (() => {
     if (items.length > MAX_SAVED) items.length = MAX_SAVED;
     if (!setSaved(items)) return;
     renderSavedAssessments();
+    renderAssessmentCompareTable();
     const btn = $("#save-compare-btn");
     const original = btn.text();
     btn.text("Сохранено ✓");
@@ -375,6 +377,87 @@ const PIDApp = (() => {
     const items = getSaved().filter(i => String(i.id) !== String(id));
     setSaved(items);
     renderSavedAssessments();
+    renderAssessmentCompareTable();
+  }
+
+  // ----------------- Сравнение оценок (текущая + сохранённые) -----------------
+  function assessmentRows() {
+    const rows = [];
+    if (lastAssessmentData) {
+      const a = lastAssessmentData.assess, raw = lastAssessmentData.raw;
+      rows.push({
+        label: "Текущая", file: $("#copy-result-btn").data("file") || "",
+        step_detected: a.step_detected,
+        step_time: (a.step_index != null && raw.time
+          && raw.time[a.step_index] != null) ? raw.time[a.step_index] : null,
+        overshoot: a.overshoot, settling_time: a.settling_time,
+        settled: a.settled, iae: a.iae,
+      });
+    }
+    getSaved().forEach(item => {
+      const a = item.assessment;
+      if (!a) return;
+      rows.push({
+        label: "Сохранённая", file: item.filename || "",
+        step_detected: a.step_detected,
+        step_time: a.step_time != null ? a.step_time : null,
+        overshoot: a.overshoot, settling_time: a.settling_time,
+        settled: a.settled, iae: a.iae,
+      });
+    });
+    return rows;
+  }
+
+  function renderAssessmentCompareTable() {
+    const table = $("#assessment-compare-table"), card = $("#compare-card");
+    if (!table.length) return;
+    const tbody = table.find("tbody");
+    const rows = assessmentRows();
+    if (!rows.length) { if (card.length) card.hide(); return; }
+    if (card.length) card.show();
+    tbody.empty();
+    rows.forEach(r => {
+      const badge = r.label === "Текущая" ? "text-bg-primary" : "text-bg-secondary";
+      const name = (r.label
+        ? `<span class="badge ${badge} me-1">${r.label}</span>` : "")
+        + escapeHtml(r.file || "—");
+      const settle = r.settled ? fmt(r.settling_time, 1) : "не достигнуто";
+      const stepCell = (r.step_detected && r.step_time != null)
+        ? fmt(r.step_time, 1) : "—";
+      tbody.append(`<tr>
+        <td>${name}</td><td>${stepCell}</td>
+        <td>${fmt(r.overshoot, 2)}</td><td>${settle}</td>
+        <td>${fmt(r.iae, 2)}</td></tr>`);
+    });
+  }
+
+  function buildCompareText() {
+    const rows = assessmentRows();
+    const lines = ["Файл\tСтупенька, с\tПеререгул., %\tВремя регул., с\tIAE"];
+    rows.forEach(r => {
+      const name = (r.label ? r.label + ": " : "") + (r.file || "—");
+      const settle = r.settled ? fmt(r.settling_time, 1) : "не достигнуто";
+      const stepCell = (r.step_detected && r.step_time != null)
+        ? fmt(r.step_time, 1) : "—";
+      lines.push([name, stepCell, fmt(r.overshoot, 2), settle, fmt(r.iae, 2)].join("\t"));
+    });
+    return lines.join("\n");
+  }
+
+  function copyCompare() {
+    const text = buildCompareText();
+    if (!text) return;
+    const btn = $("#compare-copy-btn");
+    const done = () => {
+      const original = btn.text();
+      btn.text("Скопировано ✓").addClass("btn-success");
+      setTimeout(() => { btn.text(original).removeClass("btn-success"); }, 2000);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+    } else {
+      fallbackCopy(text, done);
+    }
   }
 
   // Текстовое представление оценки — для буфера обмена
@@ -888,6 +971,11 @@ const PIDApp = (() => {
     // (переживают загрузку нового CSV, т.к. хранятся в localStorage)
     if (window.PAGE === "assessment") {
       renderSavedAssessments();
+      renderAssessmentCompareTable();
+    }
+    // Кнопка «Скопировать результаты» в карточке сравнения оценок
+    if ($("#compare-copy-btn").length) {
+      $("#compare-copy-btn").on("click", copyCompare);
     }
   });
 
