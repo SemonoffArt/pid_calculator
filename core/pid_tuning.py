@@ -99,6 +99,8 @@ def chr(model: FopdtModel, ctype: str, variant: str) -> dict:
     """
     if variant not in ("sp0", "sp20", "ds0", "ds20"):
         raise ValueError(f"Неизвестный вариант CHR: {variant}")
+    if model.tau <= 0:
+        raise ValueError("Метод Чен–Хрон (CHR) требует положительного tau.")
     base = model.T / (abs(model.K) * model.tau)
     tables = {
         "sp0": {  # servo, 0 % OS
@@ -148,6 +150,9 @@ def simc(model: FopdtModel, ctype: str, tau_c: float | None) -> dict:
     """
     if tau_c is None or tau_c <= 0:
         tau_c = model.tau
+    if tau_c + model.tau <= 0:
+        raise ValueError("Метод SIMC требует положительной суммы "
+                         "(tau_c + tau).")
     kp = model.T / (abs(model.K) * (tau_c + model.tau))
     ti = min(model.T, 4.0 * (tau_c + model.tau))
     td = model.tau / 2.0

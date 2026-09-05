@@ -536,18 +536,36 @@ def identify(data, method: str = "auto", model_type: str = "fopdt") -> dict:
 
     errors: list[str] = []
 
+    # Аппроксимация по переходной характеристике (метод двух точек)
+    step_model = None
     if method in ("step", "auto"):
         try:
-            results["model"] = identify_step_response(
+            step_model = identify_step_response(
                 data.time, data.cv, data.pv, data.step_index)
         except ValueError as exc:
             errors.append(str(exc))
 
-    if results["model"] is None and method in ("curve_fit", "auto"):
+    # МНК-аппроксимация по всему сигналу (curve_fit)
+    fit_model = None
+    if method in ("curve_fit", "auto"):
         try:
-            results["model"] = identify_curve_fit(data.time, data.cv, data.pv)
+            fit_model = identify_curve_fit(data.time, data.cv, data.pv)
         except ValueError as exc:
             errors.append(str(exc))
+
+    # В режиме "auto" выбираем модель с лучшим качеством аппроксимации (R²).
+    # Метод двух точек может дать вырожденный результат (tau ≈ 0, большая T)
+    # даже при удовлетворительном R² — из-за плохого соответствия FOPDT,
+    # тогда как МНК по всему сигналу обычно даёт физически осмысленный tau.
+    if step_model is not None and fit_model is not None:
+        if method == "auto" and fit_model.fit_quality > step_model.fit_quality:
+            results["model"] = fit_model
+        else:
+            results["model"] = step_model
+    elif step_model is not None:
+        results["model"] = step_model
+    else:
+        results["model"] = fit_model
 
     if method == "relay":
         ku, tu = identify_relay(data.pv, data.cv, data.dt)
