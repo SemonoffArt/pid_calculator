@@ -186,6 +186,41 @@ def register_routes(app: Flask) -> None:
         return data_loader.preprocess(df, state.get("interp_step"),
                                       state.get("filter_window", 5))
 
+    def _sim_data() -> data_loader.ProcessData:
+        """Данные для симуляции: реальные из файла либо синтетическая сетка.
+
+        В ручном режиме (CSV не загружен) строим равномерную временную сетку,
+        чтобы расчёт коэффициентов и симуляция работали по параметрам модели,
+        заданным пользователем вручную.
+        """
+        state = get_state()
+        if state.get("data_path"):
+            return _load_processed()
+        dt = 0.5
+        sim_time = 120.0
+        time = np.arange(0.0, sim_time + dt * 0.5, dt)
+        zeros = np.zeros(len(time))
+        return data_loader.ProcessData(
+            time=time, pv=zeros, sp=zeros, cv=zeros, dt=dt, step_index=None,
+            info={"points": len(time), "dt": dt, "step_detected": False,
+                  "step_signal": "—", "pv_span": [None, None], "manual": True},
+        )
+
+    def _validate_manual_model(model_type: str, state: dict) -> None:
+        """Проверяет корректность вручную заданных параметров модели."""
+        tau = state.get("tau")
+        if tau is None or tau < 0:
+            raise ValueError("Задайте запаздывание τ (неотрицательное число).")
+        if model_type == "ipdt":
+            if not state.get("Ka"):
+                raise ValueError("Задайте Ka — коэффициент усиления "
+                                 "интегрирующего звена.")
+        else:
+            if not state.get("K"):
+                raise ValueError("Задайте K — коэффициент усиления объекта.")
+            if not state.get("T"):
+                raise ValueError("Задайте T — постоянную времени объекта.")
+
     def _model_type() -> str:
         """Текущий тип модели из состояния (по умолчанию FOPDT)."""
         tid = get_state().get("model_type", "fopdt")
@@ -222,11 +257,10 @@ def register_routes(app: Flask) -> None:
     def results_page():
         """Страница результатов с графиками."""
         state = get_state()
-        if not state.get("K") and not state.get("Ka"):
-            flash("Сначала загрузите данные процесса.", "warning")
-            return redirect(url_for("index"))
+        manual = not bool(state.get("data_path"))
         return render_template(
             "results.html",
+            manual=manual,
             state={
                 "upload_name": state.get("upload_name"),
                 "model_type": _model_type(),
@@ -320,7 +354,8 @@ def register_routes(app: Flask) -> None:
     def _resolve_sim_context(payload: dict) -> dict:
         """Разбирает общий контекст (модель + параметры симуляции) из payload."""
         state = get_state()
-        if not state.get("K") and not state.get("Ka"):
+        manual = not bool(state.get("data_path"))
+        if not manual and not state.get("K") and not state.get("Ka"):
             raise ValueError("Данные не загружены.")
 
         sp_target = _num(payload.get("sp_target"))
@@ -347,28 +382,37 @@ def register_routes(app: Flask) -> None:
         if model_tau is not None:
             state["tau"] = model_tau
 
+        # Ручное редактирование параметров модели (опционально)
         if model_type == "ipdt":
             model_ka = _num(payload.get("model_ka"))
             if model_ka is not None:
                 state["Ka"] = model_ka
-            save_state(model_type="ipdt", Ka=state.get("Ka"), tau=state["tau"],
-                       m0=state.get("m0", 0.0), balance=state.get("balance", 0.0))
-            model = identification.IpdtModel(Ka=state.get("Ka", 0.0),
-                                             tau=state["tau"],
-                                             m0=state.get("m0", 0.0),
-                                             balance=state.get("balance", 0.0))
         else:
-            # Ручное редактирование параметров модели FOPDT (опционально)
             model_k = _num(payload.get("model_k"))
             model_t = _num(payload.get("model_t"))
             if model_k is not None:
                 state["K"] = model_k
             if model_t is not None:
                 state["T"] = model_t
-            save_state(model_type="fopdt", K=state["K"], T=state["T"],
-                       tau=state["tau"])
-            model = identification.FopdtModel(K=state["K"], T=state["T"],
-                                              tau=state["tau"])
+
+        # В ручном режиме (CSV не загружен) проверяем, что параметры модели
+        # заданы корректно, до построения модели.
+        if manual:
+            _validate_manual_model(model_type, state)
+
+        if model_type == "ipdt":
+            save_state(model_type="ipdt", Ka=state.get("Ka"), tau=state.get("tau"),
+                       m0=state.get("m0", 0.0), balance=state.get("balance", 0.0))
+            model = identification.IpdtModel(Ka=state.get("Ka", 0.0),
+                                             tau=state.get("tau", 0.0),
+                                             m0=state.get("m0", 0.0),
+                                             balance=state.get("balance", 0.0))
+        else:
+            save_state(model_type="fopdt", K=state.get("K"), T=state.get("T"),
+                       tau=state.get("tau"))
+            model = identification.FopdtModel(K=state.get("K", 0.0),
+                                              T=state.get("T", 0.0),
+                                              tau=state.get("tau", 0.0))
 
         # При ручном редактировании модели (Ka/τ или K/T/τ) критические
         # параметры контура Ku/Tu должны пересчитываться по актуальной модели —
@@ -387,7 +431,7 @@ def register_routes(app: Flask) -> None:
             state["Ku"], state["Tu"] = ku, tu
             save_state(Ku=ku, Tu=tu)
 
-        data = _load_processed()
+        data = _sim_data()
 
         data_span = float(data.time[-1] - data.time[0])
         sim_time = min(max(2.0 * data_span, 60.0), 3600.0)

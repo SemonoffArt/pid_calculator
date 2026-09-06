@@ -844,8 +844,10 @@ const PIDApp = (() => {
     })
       .done((data) => {
         if (data.error) { alert("Ошибка: " + data.error); return; }
-        drawRaw(data.raw);
-        drawModel(data.model_response, data.raw);
+        if (!window.MANUAL_MODE) {
+          drawRaw(data.raw);
+          drawModel(data.model_response, data.raw);
+        }
         renderAllSims(data);
         updateCoeffs(data);
       })
@@ -885,6 +887,13 @@ const PIDApp = (() => {
     // Смена типа модели: повторная идентификация + пересчёт
     $("#model-type").on("change", function () {
       const mt = $(this).val() === "ipdt" ? "ipdt" : "fopdt";
+      // Ручной режим: данных нет, повторная идентификация невозможна —
+      // просто переключаем тип модели и пересчитываем по введённым параметрам.
+      if (window.MANUAL_MODE) {
+        setModelType(mt);
+        recalculate();
+        return;
+      }
       setBusy(true);
       $.ajax({
         url: "/api/reidentify",

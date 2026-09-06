@@ -13,6 +13,13 @@
   {% endif %}
 </p>
 
+{% if manual %}
+<div class="alert alert-info">
+  Данные не загружены. Задайте параметры модели вручную
+  (K, T, τ или Ka, τ) и нажмите «Пересчитать».
+</div>
+{% endif %}
+
 {% for warning in state.warnings %}
 <div class="alert alert-warning">{{ warning }}</div>
 {% endfor %}
@@ -251,6 +258,7 @@
 
   <!-- Графики -->
   <div class="col-lg-8">
+    {% if not manual %}
     <div class="card shadow-sm p-3 mb-3">
       <h5>Исходные данные: PV, SP, CV</h5>
       <div id="plot-raw" style="height:340px;"></div>
@@ -259,6 +267,7 @@
       <h5>Модель <span id="model-chart-title">FOPDT</span> и данные</h5>
       <div id="plot-model" style="height:300px;"></div>
     </div>
+    {% endif %}
 
     <!-- Основная карточка: выбранный алгоритм -->
     <div class="card shadow-sm p-3 mb-3" id="sim-primary-card">
@@ -296,9 +305,14 @@
 {% endblock %}
 
 {% block scripts %}
-<script>window.PAGE = "results";</script>
+<script>window.PAGE = "results";
+window.MANUAL_MODE = {{ 'true' if manual else 'false' }};</script>
 <script>
-  // Первичный расчёт при открытии страницы
-  $(function () { PIDApp.recalculate(); });
+  // Первичный расчёт при открытии страницы. В ручном режиме без загруженного
+  // файла запускаем его только когда параметры модели уже заданы.
+  $(function () {
+    var hasModel = {{ 'true' if state.K or state.Ka else 'false' }};
+    if (!window.MANUAL_MODE || hasModel) { PIDApp.recalculate(); }
+  });
 </script>
 {% endblock %}
