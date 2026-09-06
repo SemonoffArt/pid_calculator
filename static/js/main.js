@@ -859,6 +859,15 @@ const PIDApp = (() => {
       .always(() => setBusy(false));
   }
 
+  // Готовые параметры типовых объектов (K, T, τ) для ручного режима
+  const MODEL_PRESETS = {
+    heat:     { K: 2.0,  T: 120, tau: 10 },
+    tank:     { K: 0.5,  T: 60,  tau: 5 },
+    flow:     { K: 1.5,  T: 8,   tau: 2 },
+    pressure: { K: 1.2,  T: 15,  tau: 1 },
+    column:   { K: 0.8,  T: 600, tau: 60 },
+  };
+
   // Обновление подсказки «Метод настройки» под выбранный метод
   function updateMethodTip() {
     const el = document.getElementById("method-tip");
@@ -884,6 +893,17 @@ const PIDApp = (() => {
 
     $("#recalc-btn").on("click", () => recalculate());
     $("#run-sim-btn").on("click", () => recalculate(collectManual()));
+    // Типовой объект в ручном режиме: заполняет параметры модели и пересчитывает
+    $("#preset-model").on("change", function () {
+      const p = MODEL_PRESETS[$(this).val()];
+      if (!p) return;
+      $("#model-type").val("fopdt");
+      setModelType("fopdt");
+      $("#model-K").val(p.K);
+      $("#model-T").val(p.T);
+      $("#model-tau").val(p.tau);
+      recalculate();
+    });
     // Смена типа модели: повторная идентификация + пересчёт
     $("#model-type").on("change", function () {
       const mt = $(this).val() === "ipdt" ? "ipdt" : "fopdt";

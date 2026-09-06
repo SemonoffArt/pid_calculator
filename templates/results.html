@@ -52,6 +52,21 @@
           <option value="ipdt" {% if state.model_type == 'ipdt' %}selected{% endif %}>IPDT — интегрирующее звено с запаздыванием</option>
         </select>
       </div>
+      {% if manual %}
+      <div class="mb-2">
+        <label for="preset-model" class="form-label">Типовой объект
+          <span class="help-q" data-bs-toggle="tooltip"
+            data-bs-title="Готовые параметры модели (K, T, τ) для типовых объектов. Выбор заполняет поля и пересчитывает регулятор.">?</span></label>
+        <select class="form-select" id="preset-model">
+          <option value="">— выбрать тип объекта —</option>
+          <option value="heat">Нагрев (K=2, T=120, τ=10)</option>
+          <option value="tank">Уровень в баке (K=0,5, T=60, τ=5)</option>
+          <option value="flow">Расход (K=1,5, T=8, τ=2)</option>
+          <option value="pressure">Давление (K=1,2, T=15, τ=1)</option>
+          <option value="column">Колонна (K=0,8, T=600, τ=60)</option>
+        </select>
+      </div>
+      {% endif %}
       <table class="table table-sm table-striped" id="model-params-table">
         <tbody>
         <tr id="fopdt-K-row"><th>K (усиление)
