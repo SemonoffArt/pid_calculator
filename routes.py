@@ -279,6 +279,14 @@ def register_routes(app: Flask) -> None:
             },
         )
 
+    @app.route("/clear", methods=["POST"])
+    def clear_data():
+        """Удаляет загруженные данные процесса (возврат к ручному режиму)."""
+        clear_state()
+        flash("Данные удалены. Можно загрузить новый CSV или задать параметры "
+              "модели вручную.", "success")
+        return redirect(url_for("index"))
+
     # ------------------------------------------------------ оценка регулирования
     @app.route("/assessment")
     def assessment_page():

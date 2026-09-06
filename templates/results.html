@@ -4,14 +4,22 @@
 {% block content %}
 <h1 class="mb-3">Результаты</h1>
 
-<p class="text-muted mb-3">
-  {% if state.upload_name %}Файл: <b>{{ state.upload_name }}</b>{% else %}Данные процесса{% endif %}
-  {% if state.info.get('points') %}&nbsp;·&nbsp;{{ state.info.get('points') }} точек, шаг
-    {{ "%.3g"|format(state.info.get('dt')) }} с{% endif %}
-  {% if state.normalized and state.norm_scale %}
-    <span class="badge text-bg-success ms-1">нормализовано (0–100 %, масштаб {{ "%.3g"|format(state.norm_scale) }})</span>
+<div class="d-flex align-items-center mb-3">
+  <div class="text-muted flex-grow-1">
+    {% if state.upload_name %}Файл: <b>{{ state.upload_name }}</b>{% else %}Данные процесса{% endif %}
+    {% if state.info.get('points') %}&nbsp;·&nbsp;{{ state.info.get('points') }} точек, шаг
+      {{ "%.3g"|format(state.info.get('dt')) }} с{% endif %}
+    {% if state.normalized and state.norm_scale %}
+      <span class="badge text-bg-success ms-1">нормализовано (0–100 %, масштаб {{ "%.3g"|format(state.norm_scale) }})</span>
+    {% endif %}
+  </div>
+  {% if not manual %}
+  <form method="post" action="{{ url_for('clear_data') }}" class="ms-2">
+    <button type="submit" class="btn btn-outline-danger btn-sm"
+            onclick="return confirm('Удалить загруженные данные?');">Удалить данные</button>
+  </form>
   {% endif %}
-</p>
+</div>
 
 {% if manual %}
 <div class="alert alert-info">
