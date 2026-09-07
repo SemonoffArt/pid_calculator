@@ -81,6 +81,11 @@ def register_routes(app: Flask) -> None:
         """Главная страница — загрузка файла."""
         return render_template("index.html")
 
+    @app.route("/manual")
+    def manual_page():
+        """Страница инструкции по работе с приложением."""
+        return render_template("manual.html")
+
     @app.route("/upload", methods=["POST"])
     def upload():
         """Обработка загруженного CSV-файла."""
