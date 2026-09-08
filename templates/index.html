@@ -10,7 +10,9 @@
     <form method="post" action="{{ url_for('upload') }}" enctype="multipart/form-data"
           class="card p-4 shadow-sm" id="upload-form">
       <div class="mb-3">
-        <label for="file" class="form-label">CSV-файл с колонками PV, SP, CV (опционально Time)</label>
+        <label for="file" class="form-label">CSV-файл с колонками PV, SP, CV (опционально Time)
+          <span class="help-q" data-bs-toggle="tooltip"
+            data-bs-title="Экспорт тренда из ECS в CSV. Обязательные колонки PV (текущее значение), SP (задание), CV (ход регулятора); колонка Time необязательна — при её отсутствии шаг времени берётся из настроек. Разделитель («;» или «,») и порядок колонок распознаются автоматически. Если есть строка Y-max — инженерный масштаб шкалы подтянется из неё.">?</span></label>
         <input type="file" class="form-control" id="file" name="file" accept=".csv,.txt" required>
       </div>
 
@@ -20,12 +22,16 @@
           <div class="col-md-6">
             <label for="interp_step" class="form-label">
               Шаг интерполяции, с <span class="text-muted">(пусто — авто)</span>
+              <span class="help-q" data-bs-toggle="tooltip"
+                data-bs-title="Приводит запись к равномерной сетке времени (в секундах). Нужен, если исходные данные идут с переменным шагом или без колонки Time. Пусто — шаг определяется автоматически по данным. Слишком мелкий шаг замедляет расчёт, слишком крупный искажает динамику.">?</span>
             </label>
             <input type="text" class="form-control" id="interp_step" name="interp_step"
                    placeholder="например, 1">
           </div>
           <div class="col-md-6">
-            <label for="filter_window" class="form-label">Окно медианного фильтра, точек</label>
+            <label for="filter_window" class="form-label">Окно медианного фильтра, точек
+              <span class="help-q" data-bs-toggle="tooltip"
+                data-bs-title="Сглаживание выбросов (пиков шума) в PV/SP/CV: каждая точка заменяется медианой соседних значений. Нечётное окно (3, 5, 7…) — типичный выбор при сильном дрожании сигнала. 0 — фильтрация выключена. Не переусердствуйте: сильное сглаживание искажает запаздывание и постоянную времени.">?</span></label>
             <input type="number" class="form-control" id="filter_window" name="filter_window"
                    value="0" min="0" max="15" step="1">
             <div class="form-text">0 — без медианной фильтрации</div>
@@ -47,29 +53,39 @@
       </fieldset>
 
       <fieldset class="border rounded p-3 mb-3">
-        <legend class="fs-6">Режим идентификации модели</legend>
+        <legend class="fs-6">Режим идентификации модели
+          <span class="help-q" data-bs-toggle="tooltip"
+            data-bs-title="Способ извлечения параметров модели (K, T, τ или Ka, τ) из загруженных данных. «Авто» сам распознаёт характер записи; остальные режимы предназначены для данных конкретного вида — ступенчатого теста, произвольного сигнала или автоколебаний от релейного регулятора.">?</span></legend>
         <div class="form-check">
           <input class="form-check-input" type="radio" name="id_mode" value="auto" id="id_auto" checked>
           <label class="form-check-label" for="id_auto">
             Автоматически (переходная характеристика → МНК)
+            <span class="help-q" data-bs-toggle="tooltip"
+              data-bs-title="Сначала пробует найти ступеньку SP/CV и идентифицировать по переходной характеристике; если ступеньки нет — применяет МНК-аппроксимацию FOPDT по всему сигналу. Подходит в большинстве случаев, начните с него.">?</span>
           </label>
         </div>
         <div class="form-check">
           <input class="form-check-input" type="radio" name="id_mode" value="step" id="id_step">
           <label class="form-check-label" for="id_step">
             По переходной характеристике (ступенька SP/CV)
+            <span class="help-q" data-bs-toggle="tooltip"
+              data-bs-title="Классический активный тест: в записи есть резкое ступенчатое изменение SP или CV (в ручном режиме), после которого PV выходит на новый установившийся режим. По кривой разгона определяются K, T и τ.">?</span>
           </label>
         </div>
         <div class="form-check">
           <input class="form-check-input" type="radio" name="id_mode" value="curve_fit" id="id_fit">
           <label class="form-check-label" for="id_fit">
             Аппроксимация FOPDT по произвольному сигналу (МНК)
+            <span class="help-q" data-bs-toggle="tooltip"
+              data-bs-title="Метод наименьших квадратов: параметры FOPDT-модели подбираются так, чтобы реакция модели максимально совпала с фактической записью. Используйте, когда чёткой ступеньки нет — например, плавные изменения задания или возмущения. Качество оценивается по R².">?</span>
           </label>
         </div>
         <div class="form-check">
           <input class="form-check-input" type="radio" name="id_mode" value="relay" id="id_relay">
           <label class="form-check-label" for="id_relay">
             Релейный метод (в данных есть автоколебания)
+            <span class="help-q" data-bs-toggle="tooltip"
+              data-bs-title="Для записи с устойчивыми колебаниями PV (релейный/двухпозиционный регулятор). По амплитуде и периоду автоколебаний вычисляются критические параметры Ku и Tu (Ku = 4·d/(π·a)), из которых затем выводятся коэффициенты ПИД.">?</span>
           </label>
         </div>
       </fieldset>
@@ -80,6 +96,8 @@
           <input class="form-check-input" type="checkbox" id="normalize" name="normalize" value="1" checked>
           <label class="form-check-label" for="normalize">
             Нормализовать PV и SP в 0–100 %
+            <span class="help-q" data-bs-toggle="tooltip"
+              data-bs-title="Приводит PV и SP к процентам шкалы (value / max × 100). Тогда усиление объекта K становится безразмерным (~1), а коэффициенты Kp/Ti/Td — привычного порядка, сопоставимого с внешними калькуляторами и настройками регулятора. CV остаётся в исходных единицах.">?</span>
           </label>
           <div class="form-text">
             Пересчитывает PV и SP в проценты шкалы (value / max × 100) —
@@ -87,10 +105,12 @@
           </div>
         </div>
         <div class="mb-0" id="norm-scale-group" style="display:none;">
-          <label for="norm-scale" class="form-label">
-            Максимум шкалы (масштаб), ед. изм.
-            <span class="text-muted">(если в CSV нет строки Y-max)</span>
-          </label>
+            <label for="norm-scale" class="form-label">
+              Максимум шкалы (масштаб), ед. изм.
+              <span class="text-muted">(если в CSV нет строки Y-max)</span>
+              <span class="help-q" data-bs-toggle="tooltip"
+                data-bs-title="Верхняя граница шкалы прибора в инженерных единицах — используется как делитель при нормализации. Например, для датчика температуры 0…150 °C укажите 150. Если в файле есть строка Y-max, масштаб берётся из неё автоматически.">?</span>
+            </label>
           <input type="number" step="any" class="form-control" id="norm-scale"
                  name="norm_scale" placeholder="например, 6">
           <div class="form-text">
