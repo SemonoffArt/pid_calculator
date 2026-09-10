@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="static/images/img1.png" alt="PID Calculator" width="100%">
+  <img src="static/images/screen_app_02.png" alt="PID Calculator" width="100%">
 </p>
 
 ---
