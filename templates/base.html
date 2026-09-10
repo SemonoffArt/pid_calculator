@@ -6,7 +6,8 @@
   <title>{% block title %}Настройка ПИД-регулятора{% endblock %}</title>
   <link rel="icon" href="{{ url_for('static', filename='images/favicon.ico') }}">
   <link rel="shortcut icon" href="{{ url_for('static', filename='images/favicon.ico') }}">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="{{ url_for('static', filename='vendor/bootstrap/5.3.3/bootstrap.min.css') }}" rel="stylesheet">
+  <link href="{{ url_for('static', filename='vendor/bootstrap-icons/1.11.3/bootstrap-icons.min.css') }}" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
   {% block head %}{% endblock %}
 </head>
@@ -19,10 +20,10 @@
     <span>ПИД-калькулятор</span>
   </a>
   <nav class="nav">
-    <a class="nav-link" href="{{ url_for('index') }}">📁 Загрузка данных</a>
-    <a class="nav-link" href="{{ url_for('results_page') }}">📈 Расчёт ПИД</a>
-    <a class="nav-link" href="{{ url_for('assessment_page') }}">📊 Оценка регулирования</a>
-    <a class="nav-link" href="{{ url_for('manual_page') }}">📖 Инструкция</a>
+    <a class="nav-link" href="{{ url_for('index') }}"><i class="bi bi-cloud-arrow-up"></i> Загрузка данных</a>
+    <a class="nav-link" href="{{ url_for('results_page') }}"><i class="bi bi-sliders"></i> Расчёт ПИД</a>
+    <a class="nav-link" href="{{ url_for('assessment_page') }}"><i class="bi bi-clipboard-data"></i> Оценка регулирования</a>
+    <a class="nav-link" href="{{ url_for('manual_page') }}"><i class="bi bi-book"></i> Инструкция</a>
   </nav>
 </nav>
 
@@ -54,9 +55,9 @@
           title="К концу страницы" aria-label="К концу страницы">▼</button>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
-<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script src="{{ url_for('static', filename='vendor/bootstrap/5.3.3/bootstrap.bundle.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/jquery/3.7.1/jquery.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/plotly/2.35.2/plotly.min.js') }}"></script>
 <script>
   window.MathJax = {
     tex: {
@@ -68,7 +69,7 @@
   };
 </script>
 <script id="MathJax-script" async
-        src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+        src="{{ url_for('static', filename='vendor/mathjax/3.2.2/tex-svg.js') }}"></script>
 <script>
   // Перерисовка формул при раскрытии аккордеонов (MathJax не измеряет
   // спрятанные элементы — нужно пере-типографировать после показа)

@@ -597,9 +597,9 @@ const PIDApp = (() => {
     if (!setModelSaved(items)) return;
     renderModelCompareTable();
     const btn = $("#save-model-btn");
-    const original = btn.html();
-    btn.html("✓");
-    setTimeout(() => btn.html(original), 1200);
+    const icon = btn.find("i");
+    icon.removeClass("bi-save").addClass("bi-check-lg");
+    setTimeout(() => icon.removeClass("bi-check-lg").addClass("bi-save"), 1200);
   }
 
   function deleteModelSaved(id) {
