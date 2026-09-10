@@ -120,6 +120,8 @@
         {% endif %}
         </tbody>
       </table>
+      <button type="button" class="btn btn-outline-success btn-sm w-100 mt-2"
+              id="save-model-btn">Сохранить</button>
     </div>
 
     <div class="card shadow-sm p-3 mb-3">
@@ -321,6 +323,30 @@
 
     <!-- Карточки остальных алгоритмов -->
     <div id="sim-others"></div>
+
+    <!-- Сравнение параметров модели (текущая + сохранённые) -->
+    <div class="card shadow-sm p-3 mb-3" id="model-compare-card" style="display:none;">
+      <div class="d-flex justify-content-between align-items-start mb-2">
+        <h5 class="mb-0">Сравнение параметров модели</h5>
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-outline-secondary btn-sm"
+                  id="model-compare-copy-btn">Скопировать результаты</button>
+          <button type="button" class="btn btn-outline-danger btn-sm"
+                  id="model-compare-clear-btn">Удалить всё</button>
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm table-striped" id="model-compare-table">
+          <thead>
+            <tr>
+              <th>Источник</th><th>Тип</th><th>K</th><th>T, с</th><th>τ, с</th>
+              <th>Ka, 1/с</th><th>Ku / Tu</th><th>R²</th><th>Управляемость</th><th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
 
     {% include "_reference.html" %}
   </div>

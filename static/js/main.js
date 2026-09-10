@@ -63,6 +63,9 @@ const PIDApp = (() => {
   // Данные последней оценки — для кнопки «Скопировать результаты»
   let lastAssessmentData = null;
 
+  // Данные последнего расчёта модели — для сохранения снимка «Параметры модели»
+  let lastModelData = null;
+
   // График и метрики «Оценки регулирования» по фактическим данным
   function drawAssessment(assess, raw) {
     if (!assess || !$("#plot-assessment").length) return;
@@ -529,6 +532,176 @@ const PIDApp = (() => {
     }
   }
 
+  // --------- Сохранённые снимки параметров модели (localStorage) --------------
+  const MODEL_SAVED_KEY = "pid_model_saved";
+  const MODEL_MAX_SAVED = 20;        // лимит числа снимков (старые вытесняются)
+
+  function getModelSaved() {
+    try { return JSON.parse(localStorage.getItem(MODEL_SAVED_KEY)) || []; }
+    catch (e) { return []; }
+  }
+
+  function setModelSaved(list) {
+    try {
+      localStorage.setItem(MODEL_SAVED_KEY, JSON.stringify(list));
+      return true;
+    } catch (e) {
+      alert("Не удалось сохранить: переполнено хранилище браузера.");
+      return false;
+    }
+  }
+
+  // Строка таблицы по текущим (рассчитанным) параметрам модели
+  function modelCurrentRow() {
+    const d = lastModelData;
+    if (!d || !d.model) return null;
+    const m = d.model, c = d.controlability || {};
+    return {
+      label: "Текущая",
+      type: m.type === "ipdt" ? "IPDT" : "FOPDT",
+      K: m.K, T: m.T, tau: m.tau, Ka: m.Ka,
+      Ku: m.Ku, Tu: m.Tu, fit_quality: m.fit_quality,
+      ctrl_label: c.label, ctrl_ratio: c.ratio,
+      file: m.upload_name || "",
+    };
+  }
+
+  // Строка таблицы по сохранённому снимку
+  function modelSavedRow(item) {
+    return {
+      label: "Сохранённая", id: item.id, saved_at: item.saved_at,
+      type: item.type, K: item.K, T: item.T, tau: item.tau, Ka: item.Ka,
+      Ku: item.Ku, Tu: item.Tu, fit_quality: item.fit_quality,
+      ctrl_label: item.ctrl_label, ctrl_ratio: item.ctrl_ratio,
+      file: item.file || "",
+    };
+  }
+
+  function buildModelSnapshot() {
+    const r = modelCurrentRow();
+    if (!r) return null;
+    return {
+      id: Date.now(), saved_at: fmtNow(),
+      type: r.type, K: r.K, T: r.T, tau: r.tau, Ka: r.Ka,
+      Ku: r.Ku, Tu: r.Tu, fit_quality: r.fit_quality,
+      ctrl_label: r.ctrl_label, ctrl_ratio: r.ctrl_ratio, file: r.file,
+    };
+  }
+
+  function saveModelSnapshot() {
+    const snap = buildModelSnapshot();
+    if (!snap) return;
+    const items = getModelSaved();
+    items.unshift(snap);
+    if (items.length > MODEL_MAX_SAVED) items.length = MODEL_MAX_SAVED;
+    if (!setModelSaved(items)) return;
+    renderModelCompareTable();
+    const btn = $("#save-model-btn");
+    const original = btn.text();
+    btn.text("Сохранено ✓");
+    setTimeout(() => btn.text(original), 2000);
+  }
+
+  function deleteModelSaved(id) {
+    setModelSaved(getModelSaved().filter(i => String(i.id) !== String(id)));
+    renderModelCompareTable();
+  }
+
+  function clearAllModelSaved() {
+    if (!getModelSaved().length) return;
+    if (!confirm("Удалить все сохранённые параметры модели?")) return;
+    setModelSaved([]);
+    renderModelCompareTable();
+  }
+
+  function modelRows() {
+    const rows = [];
+    const cur = modelCurrentRow();
+    if (cur) rows.push(cur);
+    getModelSaved().forEach(item => rows.push(modelSavedRow(item)));
+    return rows;
+  }
+
+  // Значения K/T/Ka в зависимости от типа модели
+  function modelParamCells(r) {
+    return r.type === "IPDT"
+      ? { K: "—", T: "—", Ka: fmt(r.Ka) }
+      : { K: fmt(r.K), T: fmt(r.T, 2), Ka: "—" };
+  }
+
+  function modelKuText(r) {
+    return (r.Ku != null && r.Tu != null)
+      ? `${fmt(r.Ku, 2)} / ${fmt(r.Tu, 2)}` : "—";
+  }
+
+  function modelCtrlText(r) {
+    if (!r.ctrl_label || r.ctrl_label === "—") return "—";
+    const ratio = r.ctrl_ratio != null
+      ? (r.type === "IPDT"
+        ? " (τ=" + fmt(r.ctrl_ratio, 2) + ")"
+        : " (τ/T=" + fmt(r.ctrl_ratio, 3) + ")")
+      : "";
+    return escapeHtml(r.ctrl_label) + ratio;
+  }
+
+  function renderModelCompareTable() {
+    const table = $("#model-compare-table"), card = $("#model-compare-card");
+    if (!table.length) return;
+    const tbody = table.find("tbody");
+    const rows = modelRows();
+    if (!rows.length) { if (card.length) card.hide(); tbody.empty(); return; }
+    if (card.length) card.show();
+    tbody.empty();
+    rows.forEach(r => {
+      const isCurrent = r.label === "Текущая";
+      const badge = isCurrent ? "text-bg-primary" : "text-bg-secondary";
+      const src = `<span class="badge ${badge} me-1">${r.label}</span>`
+        + escapeHtml(r.file || "—");
+      const savedTxt = r.saved_at
+        ? `<div class="text-muted small">${escapeHtml(r.saved_at)}</div>` : "";
+      const cells = modelParamCells(r);
+      const r2 = r.fit_quality != null ? fmt(r.fit_quality, 3) : "—";
+      const del = isCurrent ? "" :
+        `<button type="button" class="btn btn-outline-danger btn-sm py-0 px-1"
+                 data-del="${r.id}" title="Удалить">🗑</button>`;
+      tbody.append(`<tr>
+        <td>${src}${savedTxt}</td><td>${r.type}</td>
+        <td>${cells.K}</td><td>${cells.T}</td><td>${fmt(r.tau, 2)}</td><td>${cells.Ka}</td>
+        <td>${modelKuText(r)}</td><td>${r2}</td><td>${modelCtrlText(r)}</td><td>${del}</td>
+      </tr>`);
+    });
+  }
+
+  function buildModelCompareText() {
+    const rows = modelRows();
+    const lines = ["Источник\tТип\tK\tT, с\tτ, с\tKa, 1/с\tKu / Tu\tR²\tУправляемость"];
+    rows.forEach(r => {
+      const name = (r.label || "") + (r.file ? ": " + r.file : "");
+      const cells = modelParamCells(r);
+      const r2 = r.fit_quality != null ? fmt(r.fit_quality, 3) : "—";
+      const ctrl = modelCtrlText(r).replace(/<[^>]*>/g, "");
+      lines.push([name, r.type, cells.K, cells.T, fmt(r.tau, 2), cells.Ka,
+        modelKuText(r), r2, ctrl].join("\t"));
+    });
+    return lines.join("\n");
+  }
+
+  function copyModelCompare() {
+    const text = buildModelCompareText();
+    if (!text) return;
+    const btn = $("#model-compare-copy-btn");
+    const done = () => {
+      const original = btn.text();
+      btn.text("Скопировано ✓").addClass("btn-success");
+      setTimeout(() => { btn.text(original).removeClass("btn-success"); }, 2000);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+    } else {
+      fallbackCopy(text, done);
+    }
+  }
+
   function drawModel(mr, raw) {
     const label = currentModelType === "ipdt"
       ? "PV (модель IPDT)" : "PV (модель FOPDT)";
@@ -850,6 +1023,8 @@ const PIDApp = (() => {
         }
         renderAllSims(data);
         updateCoeffs(data);
+        lastModelData = data;
+        renderModelCompareTable();
       })
       .fail((xhr) => {
         const msg = xhr.responseJSON && xhr.responseJSON.error
@@ -1017,6 +1192,15 @@ const PIDApp = (() => {
     // Кнопка «Удалить всё» — очистка всех сохранённых сравнений
     if ($("#compare-clear-btn").length) {
       $("#compare-clear-btn").on("click", clearAllSaved);
+    }
+    // Сохранение снимка «Параметры модели» и таблица сравнения моделей
+    if ($("#save-model-btn").length) {
+      $("#save-model-btn").on("click", saveModelSnapshot);
+      $("#model-compare-copy-btn").on("click", copyModelCompare);
+      $("#model-compare-clear-btn").on("click", clearAllModelSaved);
+      $("#model-compare-table").on("click", "[data-del]", function () {
+        deleteModelSaved($(this).data("del"));
+      });
     }
   });
 
