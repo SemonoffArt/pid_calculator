@@ -597,9 +597,9 @@ const PIDApp = (() => {
     if (!setModelSaved(items)) return;
     renderModelCompareTable();
     const btn = $("#save-model-btn");
-    const original = btn.text();
-    btn.text("Сохранено ✓");
-    setTimeout(() => btn.text(original), 2000);
+    const original = btn.html();
+    btn.html("✓");
+    setTimeout(() => btn.html(original), 1200);
   }
 
   function deleteModelSaved(id) {

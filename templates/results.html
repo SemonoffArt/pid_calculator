@@ -38,10 +38,13 @@
   <!-- Панель управления -->
   <div class="col-lg-4">
     <div class="card shadow-sm p-3 mb-3">
-      <h5 class="mb-2">Параметры модели
+      <h5 class="mb-2 d-flex align-items-center gap-2">Параметры модели
         {% if state.normalized %}
           <span class="badge text-bg-success">нормализовано</span>
         {% endif %}
+        <button type="button" class="btn btn-primary btn-sm py-0 px-1"
+                id="save-model-btn" title="Сохранить параметры модели"
+                aria-label="Сохранить параметры модели">💾</button>
       </h5>
       <div class="mb-2">
         <label for="model-type" class="form-label">Тип модели
@@ -120,8 +123,6 @@
         {% endif %}
         </tbody>
       </table>
-      <button type="button" class="btn btn-outline-success btn-sm w-100 mt-2"
-              id="save-model-btn">Сохранить</button>
     </div>
 
     <div class="card shadow-sm p-3 mb-3">
