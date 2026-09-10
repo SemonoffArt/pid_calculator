@@ -593,7 +593,9 @@ def register_routes(app: Flask) -> None:
                       "type": ctx["model_type"],
                       "Ku": state.get("Ku"), "Tu": state.get("Tu"),
                       "fit_quality": state.get("fit_quality"),
-                      "upload_name": state.get("upload_name")},
+                      "upload_name": state.get("upload_name"),
+                      "normalized": state.get("normalized", False),
+                      "norm_scale": state.get("norm_scale")},
             "warnings": state.get("warnings", []),
             "raw": {
                 "time": data.time.tolist(), "pv": data.pv.tolist(),
@@ -745,7 +747,9 @@ def register_routes(app: Flask) -> None:
                       "type": ctx["model_type"],
                       "Ku": state.get("Ku"), "Tu": state.get("Tu"),
                       "fit_quality": state.get("fit_quality"),
-                      "upload_name": state.get("upload_name")},
+                      "upload_name": state.get("upload_name"),
+                      "normalized": state.get("normalized", False),
+                      "norm_scale": state.get("norm_scale")},
             "warnings": state.get("warnings", []),
             "quality_warnings": quality_warnings,
             "raw": {

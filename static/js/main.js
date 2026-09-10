@@ -561,6 +561,7 @@ const PIDApp = (() => {
       type: m.type === "ipdt" ? "IPDT" : "FOPDT",
       K: m.K, T: m.T, tau: m.tau, Ka: m.Ka,
       Ku: m.Ku, Tu: m.Tu, fit_quality: m.fit_quality,
+      normalized: m.normalized, norm_scale: m.norm_scale,
       ctrl_label: c.label, ctrl_ratio: c.ratio,
       file: m.upload_name || "",
     };
@@ -572,6 +573,7 @@ const PIDApp = (() => {
       label: "Сохранённая", id: item.id, saved_at: item.saved_at,
       type: item.type, K: item.K, T: item.T, tau: item.tau, Ka: item.Ka,
       Ku: item.Ku, Tu: item.Tu, fit_quality: item.fit_quality,
+      normalized: item.normalized, norm_scale: item.norm_scale,
       ctrl_label: item.ctrl_label, ctrl_ratio: item.ctrl_ratio,
       file: item.file || "",
     };
@@ -584,6 +586,7 @@ const PIDApp = (() => {
       id: Date.now(), saved_at: fmtNow(),
       type: r.type, K: r.K, T: r.T, tau: r.tau, Ka: r.Ka,
       Ku: r.Ku, Tu: r.Tu, fit_quality: r.fit_quality,
+      normalized: r.normalized, norm_scale: r.norm_scale,
       ctrl_label: r.ctrl_label, ctrl_ratio: r.ctrl_ratio, file: r.file,
     };
   }
@@ -634,6 +637,14 @@ const PIDApp = (() => {
       ? `${fmt(r.Ku, 2)} / ${fmt(r.Tu, 2)}` : "—";
   }
 
+  // Признак нормализации данных и масштаб (0–100 %)
+  function modelNormText(r) {
+    if (!r.normalized) return "—";
+    const scale = r.norm_scale != null
+      ? ` <span class="text-muted">(масштаб ${fmt(r.norm_scale, 3)})</span>` : "";
+    return `0–100 %${scale}`;
+  }
+
   function modelCtrlText(r) {
     if (!r.ctrl_label || r.ctrl_label === "—") return "—";
     const ratio = r.ctrl_ratio != null
@@ -665,7 +676,7 @@ const PIDApp = (() => {
         `<button type="button" class="btn btn-outline-danger btn-sm py-0 px-1"
                  data-del="${r.id}" title="Удалить">🗑</button>`;
       tbody.append(`<tr>
-        <td>${src}${savedTxt}</td><td>${r.type}</td>
+        <td>${src}${savedTxt}</td><td>${r.type}</td><td>${modelNormText(r)}</td>
         <td>${cells.K}</td><td>${cells.T}</td><td>${fmt(r.tau, 2)}</td><td>${cells.Ka}</td>
         <td>${modelKuText(r)}</td><td>${r2}</td><td>${modelCtrlText(r)}</td><td>${del}</td>
       </tr>`);
@@ -674,13 +685,17 @@ const PIDApp = (() => {
 
   function buildModelCompareText() {
     const rows = modelRows();
-    const lines = ["Источник\tТип\tK\tT, с\tτ, с\tKa, 1/с\tKu / Tu\tR²\tУправляемость"];
+    const lines = ["Источник\tТип\tНормализация\tK\tT, с\tτ, с\tKa, 1/с\tKu / Tu\tR²\tУправляемость"];
     rows.forEach(r => {
       const name = (r.label || "") + (r.file ? ": " + r.file : "");
       const cells = modelParamCells(r);
       const r2 = r.fit_quality != null ? fmt(r.fit_quality, 3) : "—";
       const ctrl = modelCtrlText(r).replace(/<[^>]*>/g, "");
-      lines.push([name, r.type, cells.K, cells.T, fmt(r.tau, 2), cells.Ka,
+      const norm = r.normalized
+        ? ("0-100 %" + (r.norm_scale != null
+          ? " (масштаб " + fmt(r.norm_scale, 3) + ")" : ""))
+        : "—";
+      lines.push([name, r.type, norm, cells.K, cells.T, fmt(r.tau, 2), cells.Ka,
         modelKuText(r), r2, ctrl].join("\t"));
     });
     return lines.join("\n");
