@@ -64,4 +64,4 @@ class Config:
     SATURATION_OVERSHOOT_TARGET = 30.0
 
     # Версия приложения (отображается в подвале)
-    VERSION = "1.1.0"
+    VERSION = "1.2.0"
