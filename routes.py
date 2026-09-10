@@ -527,7 +527,7 @@ def register_routes(app: Flask) -> None:
 
     def _api_calculate_impl():
         payload = request.get_json(silent=True) or {}
-        method = payload.get("method", "zn_open")
+        method = payload.get("method", "simc")
         ctype = payload.get("ctype", "PID")
         lam = payload.get("lambda")
         tau_c = payload.get("tau_c")
@@ -631,7 +631,7 @@ def register_routes(app: Flask) -> None:
         ctype = payload.get("ctype", "PID")
         lam = payload.get("lambda")
         tau_c = payload.get("tau_c")
-        selected = payload.get("method", "imc")
+        selected = payload.get("method", "simc")
         manual = payload.get("manual")  # ручные коэффициенты для выбранного метода
 
         try:

@@ -129,6 +129,11 @@
           <span class="help-q" id="method-tip" data-bs-toggle="tooltip"
             data-bs-title="Способ вычисления коэффициентов Kp/Ti/Td по модели объекта. Выберите метод в списке — описание обновится автоматически.">?</span></label>
         <select class="form-select" id="method">
+          <optgroup label="Модельные (IMC/SIMC/AMIGO)">
+            <option value="imc" data-ipdt="1">Внутренняя модель (IMC)</option>
+            <option value="simc" data-ipdt="1" selected>SIMC (Skogestad, 2003)</option>
+            <option value="amigo">AMIGO (Åström–Hägglund, 2004)</option>
+          </optgroup>
           <optgroup label="Зиглер–Николс">
             <option value="zn_open">З–Н, разомкнутый контур</option>
             <option value="zn_closed" data-ipdt="1">З–Н, замкнутый контур (Ku/Tu)</option>
@@ -139,11 +144,6 @@
             <option value="chr_sp20">Чен–Хрон: уставка, 20 %</option>
             <option value="chr_ds0">Чен–Хрон: возмущение, 0 %</option>
             <option value="chr_ds20">Чен–Хрон: возмущение, 20 %</option>
-          </optgroup>
-          <optgroup label="Модельные (IMC/SIMC/AMIGO)">
-            <option value="imc" data-ipdt="1">Внутренняя модель (IMC)</option>
-            <option value="simc" data-ipdt="1">SIMC (Skogestad, 2003)</option>
-            <option value="amigo">AMIGO (Åström–Hägglund, 2004)</option>
           </optgroup>
           <optgroup label="Оптимизация">
             <option value="itae" data-ipdt="1">Оптимизация ITAE</option>
